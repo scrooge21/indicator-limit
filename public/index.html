@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MEXC Pro Depth Indicator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg0:#0a0c0f; --bg1:#0f1217; --bg2:#141820; --bg3:#1a2030; --bg4:#222840;
+    --border:#1e2535; --border2:#2a3550;
+    --text0:#e8edf5; --text1:#a0aec0; --text2:#5a6a80; --text3:#384255;
+    --green:#00d68f; --green-bg:rgba(0, 214, 143, 0.1);
+    --red:#ff4d6d; --red-bg:rgba(255, 77, 109, 0.1);
+    --accent:#4d9fff; --mono:'IBM Plex Mono', monospace; --sans:'IBM Plex Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg0); color: var(--text0); font-family: var(--sans); font-size: 14px; display: flex; flex-direction: column; min-height: 100vh; }
+  
+  .header { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; background: var(--bg1); border-bottom: 1px solid var(--border); }
+  .logo { font-family: var(--mono); font-weight: 600; font-size: 16px; }
+  .logo span { color: var(--accent); }
+  .search-box { position: relative; display: flex; gap: 10px; align-items: center; }
+  .search-box input { background: var(--bg2); border: 1px solid var(--border2); color: var(--text0); padding: 6px 12px; border-radius: 4px; font-family: var(--mono); font-size: 14px; width: 200px; outline: none; text-transform: uppercase; }
+  
+  .controls { display: flex; align-items: center; gap: 16px; padding: 10px 20px; background: var(--bg1); border-bottom: 1px solid var(--border); flex-wrap: wrap;}
+  .ctrl-label { font-size: 11px; color: var(--text2); font-family: var(--mono); text-transform: uppercase; }
+  input[type=range] { -webkit-appearance: none; width: 130px; height: 3px; background: var(--bg4); border-radius: 2px; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: var(--accent); cursor: pointer; }
+  .val-badge { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+
+  .chart-area { height: 400px; background: var(--bg1); border-bottom: 1px solid var(--border); }
+
+  .indicator-grid { display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 1px; background: var(--border); }
+  .panel { background: var(--bg1); display: flex; flex-direction: column; position: relative; }
+
+  .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); margin: 16px; border-radius: 6px; overflow: hidden; }
+  .metric { background: var(--bg2); padding: 16px; text-align: center; }
+  .metric-label { font-family: var(--mono); font-size: 11px; color: var(--text2); text-transform: uppercase; margin-bottom: 8px; }
+  .metric-val { font-family: var(--mono); font-size: 20px; font-weight: 600; }
+  .metric-val.green { color: var(--green); }
+  .metric-val.red { color: var(--red); }
+  .metric-sub { font-family: var(--mono); font-size: 11px; color: var(--text1); margin-top: 4px; }
+  
+  .imb-track { margin: 0 16px 16px; height: 8px; background: var(--bg4); border-radius: 4px; display: flex; overflow: hidden; }
+  .imb-bid { background: var(--green); transition: width 0.3s; }
+  .imb-ask { background: var(--red); transition: width 0.3s; }
+
+  .book-header { display: flex; padding: 10px 16px; font-family: var(--mono); font-size: 10px; color: var(--text3); border-bottom: 1px solid var(--border); }
+  .book-header span { flex: 1; text-align: right; }
+  .book-header span:first-child { text-align: left; }
+  .book-rows { flex: 1; overflow: hidden; font-family: var(--mono); font-size: 12px; }
+  .book-row { display: flex; padding: 4px 16px; position: relative; }
+  .book-row-bar { position: absolute; top:0; height:100%; opacity: 0.15; z-index: 0;}
+  .book-row-bar.ask { left: 0; background: var(--red); }
+  .book-row-bar.bid { right: 0; background: var(--green); }
+  .book-row span { flex: 1; text-align: right; z-index: 1; }
+  .book-row span:first-child { text-align: left; }
+  .c-red { color: var(--red); } .c-green { color: var(--green); }
+  .price-mid { text-align: center; padding: 8px; font-family: var(--mono); font-size: 16px; font-weight: bold; background: var(--bg2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+
+  /* Стили для графика лимитов */
+  .chart-overlay { position: absolute; top: 10px; left: 16px; font-family: var(--mono); font-size: 11px; background: rgba(15,18,23,0.8); padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border2); z-index: 10;}
+  
+  .scanner-area { flex: 1; padding: 20px; background: var(--bg0); }
+  .scanner-title { font-family: var(--mono); font-size: 14px; margin-bottom: 12px; color: var(--text1); display: flex; justify-content: space-between; align-items: center;}
+  table { width: 100%; border-collapse: collapse; background: var(--bg1); border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+  th { background: var(--bg2); padding: 12px 16px; text-align: right; font-family: var(--mono); font-size: 11px; color: var(--text2); text-transform: uppercase; cursor: pointer; user-select: none; border-bottom: 1px solid var(--border);}
+  th:first-child { text-align: left; }
+  td { padding: 10px 16px; text-align: right; font-family: var(--mono); font-size: 13px; border-bottom: 1px solid var(--border); }
+  td:first-child { text-align: left; font-weight: bold; }
+  tr:hover td { background: var(--bg3); }
+  .badge { padding: 3px 6px; border-radius: 4px; font-size: 10px; font-family: var(--mono); }
+  .b-bull { background: var(--green-bg); color: var(--green); }
+  .b-bear { background: var(--red-bg); color: var(--red); }
+  .flex-v { display: flex; flex-direction: column; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">MEXC <span>PRO DEPTH</span></div>
+  <div class="search-box">
+    <span class="ctrl-label">Поиск пары:</span>
+    <input type="text" id="pairSearch" list="pairList" placeholder="BTCUSDT" value="BTCUSDT">
+    <datalist id="pairList"></datalist>
+  </div>
+</div>
+
+<div class="controls">
+  <span class="ctrl-label">Глубина стакана:</span>
+  <input type="range" id="depthRange" min="0.1" max="5" step="0.1" value="5.0">
+  <span class="val-badge" id="depthVal">5.0%</span>
+
+  <span class="ctrl-label" style="margin-left: 20px;">Интервал:</span>
+  <select id="intervalSel" style="background:var(--bg2); color:var(--text0); border:1px solid var(--border); padding:4px 8px; font-family:var(--mono);">
+    <option value="1000">1 сек</option>
+    <option value="3000" selected>3 сек</option>
+    <option value="5000">5 сек</option>
+  </select>
+</div>
+
+<div class="chart-area" id="tv_chart_container"></div>
+
+<div class="indicator-grid">
+  <div class="panel">
+    <div style="padding:16px 16px 0; font-family:var(--mono); color:var(--text1)">Объёмы ордеров (в USDT) на глубине <span id="lblDepth">5.0</span>%</div>
+    <div class="metrics">
+      <div class="metric">
+        <div class="metric-label">Покупатели (BID)</div>
+        <div class="metric-val green" id="mBidUSD">—</div>
+        <div class="metric-sub" id="mBidVol">— монет</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Продавцы (ASK)</div>
+        <div class="metric-val red" id="mAskUSD">—</div>
+        <div class="metric-sub" id="mAskVol">— монет</div>
+      </div>
+    </div>
+    <div class="imb-track">
+      <div class="imb-bid" id="iBidFill" style="width:50%"></div>
+      <div class="imb-ask" id="iAskFill" style="width:50%"></div>
+    </div>
+    <div style="text-align:center; font-family:var(--mono); font-size:16px; padding-bottom:16px;">
+      Дисбаланс: <span id="mImb" style="color:var(--accent); font-weight:bold;">1.00x</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="book-header"><span>Цена</span><span>Кол-во</span><span>Всего (USDT)</span></div>
+    <div class="book-rows flex-v" style="justify-content: flex-end;" id="askRows"></div>
+    <div class="price-mid" id="midPrice">—</div>
+    <div class="book-rows flex-v" style="justify-content: flex-start;" id="bidRows"></div>
+  </div>
+
+  <!-- Панель графика объемов -->
+  <div class="panel" style="padding: 16px;">
+    <div class="chart-overlay">
+      <div>BID SPOT TOTAL: <span id="legBid" class="c-green">—</span></div>
+      <div style="margin-top:4px;">ASK SPOT TOTAL: <span id="legAsk" class="c-red">—</span></div>
+    </div>
+    <canvas id="histChart" style="height: 100%; width: 100%;"></canvas>
+  </div>
+</div>
+
+<div class="scanner-area">
+  <div class="scanner-title">
+    <span>Сканнер рынка (ТОП Пары) — Обновление каждые 10с</span>
+    <span style="font-size: 11px; color: var(--text2);">Кликните по заголовку для сортировки</span>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th data-sort="symbol">Пара ↕</th>
+        <th data-sort="price">Цена ↕</th>
+        <th data-sort="bidUSD">BID (USDT) ↕</th>
+        <th data-sort="askUSD">ASK (USDT) ↕</th>
+        <th data-sort="imbalance">Дисбаланс ↕</th>
+        <th>Сигнал</th>
+      </tr>
+    </thead>
+    <tbody id="scanBody">
+      <tr><td colspan="6" style="text-align:center;">Загрузка сканера...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+  let symbol = 'BTCUSDT';
+  let depthPct = 5.0; 
+  let intervalMs = 3000;
+  let timer = null;
+  let scannerTimer = null;
+  let tvWidget = null;
+
+  let scannerData = [];
+  let sortCol = 'bidUSD';
+  let sortDesc = true;
+  const watchlist = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'BNBUSDT', 'DOGEUSDT', 'PEPEUSDT', 'WIFUSDT'];
+
+  const chartLabels = [];
+  const chartDataBid = [];
+  const chartDataAsk = [];
+  let chart = null;
+
+  const $ = id => document.getElementById(id);
+
+  function fmtMoney(v) {
+    if (v >= 1e6) return (v/1e6).toFixed(2) + 'M';
+    if (v >= 1e3) return (v/1e3).toFixed(1) + 'K';
+    return v.toFixed(0);
+  }
+  function fmtPrice(p) { return p > 1000 ? p.toLocaleString('en-US') : p.toFixed(4); }
+
+  function initTV() {
+    tvWidget = new TradingView.widget({
+      "autosize": true, "symbol": `MEXC:${symbol}`, "interval": "15",
+      "timezone": "Europe/Moscow", "theme": "dark", "style": "1", "locale": "ru",
+      "enable_publishing": false, "backgroundColor": "#0a0c0f", "gridColor": "#1e2535",
+      "container_id": "tv_chart_container"
+    });
+  }
+
+  async function loadPairs() {
+    try {
+      const res = await fetch('/api/symbols');
+      const symbols = await res.json();
+      $('pairList').innerHTML = symbols.map(s => `<option value="${s}">`).join('');
+    } catch(e) {}
+  }
+
+  function initChart() {
+    chart = new Chart($('histChart').getContext('2d'), {
+      type: 'line',
+      data: { 
+        labels: chartLabels, 
+        datasets: [
+          { label: 'BID (Покупки)', data: chartDataBid, borderColor: '#00d68f', borderWidth: 1.5, pointRadius:0, tension: 0.1 },
+          { label: 'ASK (Продажи)', data: chartDataAsk, borderColor: '#ff4d6d', borderWidth: 1.5, pointRadius:0, tension: 0.1 }
+        ] 
+      },
+      options: { 
+        animation: false, 
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+        scales: { 
+          x: { display: false }, 
+          y: { 
+            position: 'right', // Шкала справа, как в TradingView
+            grid: { color: '#1e2535' },
+            ticks: {
+              color: '#5a6a80',
+              font: { family: "'IBM Plex Mono'", size: 10 },
+              callback: function(value) { return fmtMoney(value); } // Формат M и K
+            }
+          } 
+        } 
+      }
+    });
+  }
+
+  async function loadHistory() {
+    if (symbol !== 'BTCUSDT') return; 
+    try {
+      const res = await fetch('/api/history');
+      const history = await res.json();
+      
+      chartLabels.length = 0; chartDataBid.length = 0; chartDataAsk.length = 0;
+      
+      history.forEach(row => {
+        const d = new Date(row.time);
+        chartLabels.push(d.toLocaleTimeString('ru-RU'));
+        chartDataBid.push(row.bidUSD);
+        chartDataAsk.push(row.askUSD);
+      });
+      if(chart) chart.update('none');
+    } catch(e) { console.error('Ошибка загрузки истории'); }
+  }
+
+  function renderBook(bids, asks, price) {
+    $('midPrice').textContent = fmtPrice(price);
+    
+    const topAsks = asks.slice(0, 10).reverse();
+    const maxAskVol = Math.max(...topAsks.map(x => x[1]*x[0]));
+    let askCum = 0;
+    $('askRows').innerHTML = topAsks.map(([p, v]) => {
+      const usd = p * v; askCum += usd;
+      const w = Math.round((usd/maxAskVol)*100);
+      return `<div class="book-row"><div class="book-row-bar ask" style="width:${w}%"></div>
+        <span class="c-red">${fmtPrice(parseFloat(p))}</span><span>${parseFloat(v).toFixed(2)}</span><span>$${fmtMoney(askCum)}</span></div>`;
+    }).join('');
+
+    const topBids = bids.slice(0, 10);
+    const maxBidVol = Math.max(...topBids.map(x => x[1]*x[0]));
+    let bidCum = 0;
+    $('bidRows').innerHTML = topBids.map(([p, v]) => {
+      const usd = p * v; bidCum += usd;
+      const w = Math.round((usd/maxBidVol)*100);
+      return `<div class="book-row"><div class="book-row-bar bid" style="width:${w}%"></div>
+        <span class="c-green">${fmtPrice(parseFloat(p))}</span><span>${parseFloat(v).toFixed(2)}</span><span>$${fmtMoney(bidCum)}</span></div>`;
+    }).join('');
+  }
+
+  async function tickMain() {
+    try {
+      const res = await fetch(`/api/data?symbol=${symbol}&depth=${depthPct}`);
+      const { price, book, depth } = await res.json();
+
+      $('mBidUSD').textContent = '$' + fmtMoney(depth.bidVolUSD);
+      $('mAskUSD').textContent = '$' + fmtMoney(depth.askVolUSD);
+      $('mBidVol').textContent = depth.bidVolume.toFixed(2) + ' монет';
+      $('mAskVol').textContent = depth.askVolume.toFixed(2) + ' монет';
+      $('mImb').textContent = depth.imbalance.toFixed(2) + 'x';
+      $('mImb').style.color = depth.imbalance >= 1.2 ? 'var(--green)' : depth.imbalance <= 0.8 ? 'var(--red)' : 'var(--text0)';
+
+      // Обновляем легенду на графике
+      $('legBid').textContent = fmtMoney(depth.bidVolUSD);
+      $('legAsk').textContent = fmtMoney(depth.askVolUSD);
+
+      const totUSD = depth.bidVolUSD + depth.askVolUSD || 1;
+      const pct = (depth.bidVolUSD / totUSD) * 100;
+      $('iBidFill').style.width = `${pct}%`;
+      $('iAskFill').style.width = `${100 - pct}%`;
+
+      renderBook(book.bids, book.asks, price);
+
+      const timeStr = new Date().toLocaleTimeString('ru-RU');
+      chartLabels.push(timeStr);
+      chartDataBid.push(depth.bidVolUSD);
+      chartDataAsk.push(depth.askVolUSD);
+      
+      // Храним до 120 точек (примерно 6-10 минут истории при 3с интервале)
+      if (chartLabels.length > 120) { 
+        chartLabels.shift(); 
+        chartDataBid.shift(); 
+        chartDataAsk.shift(); 
+      }
+      chart.update('none');
+
+    } catch (e) {}
+  }
+
+  async function tickScanner() {
+    try {
+      const res = await fetch(`/api/scanner?symbols=${watchlist.join(',')}&depth=${depthPct}`);
+      scannerData = await res.json();
+      renderScanner();
+    } catch (e) { }
+  }
+
+  function renderScanner() {
+    scannerData.sort((a, b) => {
+      let vA = a[sortCol], vB = b[sortCol];
+      if (sortCol === 'bidUSD') { vA = a.bidVolUSD; vB = b.bidVolUSD; }
+      if (sortCol === 'askUSD') { vA = a.askVolUSD; vB = b.askVolUSD; }
+      if (vA < vB) return sortDesc ? 1 : -1;
+      if (vA > vB) return sortDesc ? -1 : 1;
+      return 0;
+    });
+
+    $('scanBody').innerHTML = scannerData.map(d => {
+      const isBull = d.imbalance > 1.2;
+      const isBear = d.imbalance < 0.8;
+      const badge = isBull ? `<span class="badge b-bull">BULL</span>` : isBear ? `<span class="badge b-bear">BEAR</span>` : `<span class="badge">NEUTRAL</span>`;
+      return `<tr style="cursor:pointer" onclick="changeSymbol('${d.symbol}')">
+        <td style="color:var(--accent)">${d.symbol.replace('USDT','/USDT')}</td>
+        <td>${fmtPrice(d.price)}</td>
+        <td style="color:var(--green)">$${fmtMoney(d.bidVolUSD)}</td>
+        <td style="color:var(--red)">$${fmtMoney(d.askVolUSD)}</td>
+        <td style="font-weight:bold; color:${isBull?'var(--green)':isBear?'var(--red)':'inherit'}">${d.imbalance.toFixed(2)}x</td>
+        <td>${badge}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function changeSymbol(newSym) {
+    symbol = newSym.toUpperCase();
+    $('pairSearch').value = symbol;
+    chartLabels.length = 0; chartDataBid.length = 0; chartDataAsk.length = 0;
+    if(symbol === 'BTCUSDT') loadHistory(); 
+    initTV(); 
+    tickMain();
+  }
+
+  $('pairSearch').addEventListener('change', (e) => {
+    if (e.target.value) changeSymbol(e.target.value);
+  });
+
+  $('depthRange').value = "5.0";
+  $('depthVal').textContent = "5.0%";
+  $('lblDepth').textContent = "5.0";
+
+  $('depthRange').addEventListener('input', (e) => {
+    depthPct = parseFloat(e.target.value);
+    $('depthVal').textContent = depthPct.toFixed(1) + '%';
+    $('lblDepth').textContent = depthPct.toFixed(1);
+    tickMain(); 
+  });
+
+  $('intervalSel').addEventListener('change', (e) => {
+    intervalMs = parseInt(e.target.value);
+    clearInterval(timer);
+    timer = setInterval(tickMain, intervalMs);
+  });
+
+  document.querySelectorAll('th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.sort;
+      if (sortCol === col) sortDesc = !sortDesc;
+      else { sortCol = col; sortDesc = true; }
+      renderScanner();
+    });
+  });
+
+  loadPairs();
+  initTV();
+  initChart();
+  
+  loadHistory().then(() => {
+    tickMain();
+    timer = setInterval(tickMain, intervalMs);
+  });
+
+  tickScanner();
+  scannerTimer = setInterval(tickScanner, 10000); 
+
+</script>
+</body>
+</html>
