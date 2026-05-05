@@ -24,9 +24,12 @@
   .header { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; background: var(--bg1); border-bottom: 1px solid var(--border); }
   .logo { font-family: var(--mono); font-weight: 600; font-size: 16px; }
   .logo span { color: var(--accent); }
-  .search-box { position: relative; display: flex; gap: 10px; align-items: center; }
-  .search-box input { background: var(--bg2); border: 1px solid var(--border2); color: var(--text0); padding: 6px 12px; border-radius: 4px; font-family: var(--mono); font-size: 14px; width: 200px; outline: none; text-transform: uppercase; }
   
+  /* Новая кнопка выбора пары */
+  .search-box { display: flex; align-items: center; gap: 10px; }
+  .pair-select-btn { background: var(--bg2); border: 1px solid var(--border2); color: var(--text0); padding: 8px 16px; border-radius: 4px; font-family: var(--mono); font-size: 15px; font-weight: bold; cursor: pointer; transition: 0.2s; min-width: 150px; text-align: left; display: flex; justify-content: space-between; align-items: center; }
+  .pair-select-btn:hover { border-color: var(--accent); background: var(--bg3); }
+
   .controls { display: flex; align-items: center; gap: 16px; padding: 10px 20px; background: var(--bg1); border-bottom: 1px solid var(--border); flex-wrap: wrap;}
   .ctrl-label { font-size: 11px; color: var(--text2); font-family: var(--mono); text-transform: uppercase; }
   input[type=range] { -webkit-appearance: none; width: 130px; height: 3px; background: var(--bg4); border-radius: 2px; }
@@ -63,7 +66,6 @@
   .c-red { color: var(--red); } .c-green { color: var(--green); }
   .price-mid { text-align: center; padding: 8px; font-family: var(--mono); font-size: 16px; font-weight: bold; background: var(--bg2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 
-  /* Стили для графика лимитов */
   .chart-overlay { position: absolute; top: 10px; left: 16px; font-family: var(--mono); font-size: 11px; background: rgba(15,18,23,0.8); padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border2); z-index: 10;}
   
   .scanner-area { flex: 1; padding: 20px; background: var(--bg0); }
@@ -78,6 +80,27 @@
   .b-bull { background: var(--green-bg); color: var(--green); }
   .b-bear { background: var(--red-bg); color: var(--red); }
   .flex-v { display: flex; flex-direction: column; }
+
+  /* --- МОДАЛЬНОЕ ОКНО ПОИСКА --- */
+  .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 12, 15, 0.8); backdrop-filter: blur(4px); z-index: 9999; display: none; justify-content: center; align-items: center; }
+  .modal-content { background: var(--bg1); border: 1px solid var(--border); width: 400px; max-width: 90%; border-radius: 8px; display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+  .modal-header { padding: 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .modal-header h3 { font-family: var(--sans); font-size: 16px; margin: 0; color: var(--text0); }
+  .close-btn { background: none; border: none; color: var(--text2); font-size: 24px; cursor: pointer; line-height: 1; }
+  .close-btn:hover { color: var(--red); }
+  .modal-search { padding: 16px; border-bottom: 1px solid var(--border); }
+  .modal-search input { width: 100%; background: var(--bg2); border: 1px solid var(--border2); color: var(--text0); padding: 12px; border-radius: 6px; font-family: var(--mono); font-size: 14px; outline: none; }
+  .modal-search input:focus { border-color: var(--accent); }
+  .pair-list { max-height: 400px; overflow-y: auto; padding: 8px; }
+  .pair-item { padding: 12px 16px; font-family: var(--mono); font-size: 14px; color: var(--text0); cursor: pointer; border-radius: 4px; transition: 0.1s; display: flex; justify-content: space-between; }
+  .pair-item:hover { background: var(--bg3); color: var(--accent); }
+  .pair-item span { color: var(--text2); font-size: 12px; }
+
+  /* Scrollbar для модалки */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text2); }
 </style>
 </head>
 <body>
@@ -85,9 +108,25 @@
 <div class="header">
   <div class="logo">MEXC <span>PRO DEPTH</span></div>
   <div class="search-box">
-    <span class="ctrl-label">Поиск пары:</span>
-    <input type="text" id="pairSearch" list="pairList" placeholder="BTCUSDT" value="BTCUSDT">
-    <datalist id="pairList"></datalist>
+    <span class="ctrl-label">Торговая пара:</span>
+    <button id="btnOpenSearch" class="pair-select-btn">BTC / USDT <span style="font-size:10px; color:var(--text2)">▼</span></button>
+  </div>
+</div>
+
+<!-- Модальное окно для выбора пар -->
+<div id="searchModal" class="modal-overlay">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>Выберите торговую пару</h3>
+      <button id="btnCloseSearch" class="close-btn">&times;</button>
+    </div>
+    <div class="modal-search">
+      <input type="text" id="modalSearchInput" placeholder="Поиск (например, SOL)..." autocomplete="off">
+    </div>
+    <div id="modalPairList" class="pair-list">
+      <!-- Сюда подгрузятся пары -->
+      <div style="padding: 20px; text-align: center; color: var(--text2); font-family: var(--mono);">Загрузка пар с MEXC...</div>
+    </div>
   </div>
 </div>
 
@@ -97,7 +136,7 @@
   <span class="val-badge" id="depthVal">5.0%</span>
 
   <span class="ctrl-label" style="margin-left: 20px;">Интервал:</span>
-  <select id="intervalSel" style="background:var(--bg2); color:var(--text0); border:1px solid var(--border); padding:4px 8px; font-family:var(--mono);">
+  <select id="intervalSel" style="background:var(--bg2); color:var(--text0); border:1px solid var(--border); padding:4px 8px; font-family:var(--mono); border-radius: 4px;">
     <option value="1000">1 сек</option>
     <option value="3000" selected>3 сек</option>
     <option value="5000">5 сек</option>
@@ -177,9 +216,11 @@
   let scannerTimer = null;
   let tvWidget = null;
 
+  let allSymbols = []; // Хранит все загруженные пары с биржи
   let scannerData = [];
   let sortCol = 'bidUSD';
   let sortDesc = true;
+  // Пары по умолчанию для сканера (можете менять)
   const watchlist = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'BNBUSDT', 'DOGEUSDT', 'PEPEUSDT', 'WIFUSDT'];
 
   const chartLabels = [];
@@ -205,13 +246,52 @@
     });
   }
 
+  // --- ЛОГИКА ОКНА ПОИСКА ---
   async function loadPairs() {
     try {
       const res = await fetch('/api/symbols');
-      const symbols = await res.json();
-      $('pairList').innerHTML = symbols.map(s => `<option value="${s}">`).join('');
+      allSymbols = await res.json();
+      renderModalList(allSymbols);
     } catch(e) {}
   }
+
+  function renderModalList(list) {
+    $('modalPairList').innerHTML = list.map(s => {
+      const display = s.replace('USDT', ' / USDT');
+      return `<div class="pair-item" onclick="selectPairFromModal('${s}')">
+                ${display} <span>Спот</span>
+              </div>`;
+    }).join('');
+  }
+
+  $('btnOpenSearch').addEventListener('click', () => {
+    $('searchModal').style.display = 'flex';
+    $('modalSearchInput').value = '';
+    renderModalList(allSymbols); // Сбрасываем фильтр при открытии
+    setTimeout(() => $('modalSearchInput').focus(), 100);
+  });
+
+  $('btnCloseSearch').addEventListener('click', () => {
+    $('searchModal').style.display = 'none';
+  });
+
+  // Закрытие по клику вне окна
+  $('searchModal').addEventListener('click', (e) => {
+    if (e.target === $('searchModal')) $('searchModal').style.display = 'none';
+  });
+
+  // Живой поиск
+  $('modalSearchInput').addEventListener('input', (e) => {
+    const val = e.target.value.toUpperCase();
+    const filtered = allSymbols.filter(s => s.includes(val));
+    renderModalList(filtered);
+  });
+
+  function selectPairFromModal(sym) {
+    $('searchModal').style.display = 'none';
+    changeSymbol(sym);
+  }
+  // --------------------------
 
   function initChart() {
     chart = new Chart($('histChart').getContext('2d'), {
@@ -230,12 +310,12 @@
         scales: { 
           x: { display: false }, 
           y: { 
-            position: 'right', // Шкала справа, как в TradingView
+            position: 'right', 
             grid: { color: '#1e2535' },
             ticks: {
               color: '#5a6a80',
               font: { family: "'IBM Plex Mono'", size: 10 },
-              callback: function(value) { return fmtMoney(value); } // Формат M и K
+              callback: function(value) { return fmtMoney(value); } 
             }
           } 
         } 
@@ -258,7 +338,7 @@
         chartDataAsk.push(row.askUSD);
       });
       if(chart) chart.update('none');
-    } catch(e) { console.error('Ошибка загрузки истории'); }
+    } catch(e) {}
   }
 
   function renderBook(bids, asks, price) {
@@ -297,7 +377,6 @@
       $('mImb').textContent = depth.imbalance.toFixed(2) + 'x';
       $('mImb').style.color = depth.imbalance >= 1.2 ? 'var(--green)' : depth.imbalance <= 0.8 ? 'var(--red)' : 'var(--text0)';
 
-      // Обновляем легенду на графике
       $('legBid').textContent = fmtMoney(depth.bidVolUSD);
       $('legAsk').textContent = fmtMoney(depth.askVolUSD);
 
@@ -313,7 +392,6 @@
       chartDataBid.push(depth.bidVolUSD);
       chartDataAsk.push(depth.askVolUSD);
       
-      // Храним до 120 точек (примерно 6-10 минут истории при 3с интервале)
       if (chartLabels.length > 120) { 
         chartLabels.shift(); 
         chartDataBid.shift(); 
@@ -359,16 +437,14 @@
 
   function changeSymbol(newSym) {
     symbol = newSym.toUpperCase();
-    $('pairSearch').value = symbol;
+    // Обновляем текст на кнопке
+    $('btnOpenSearch').innerHTML = symbol.replace('USDT', ' / USDT') + ' <span style="font-size:10px; color:var(--text2)">▼</span>';
+    
     chartLabels.length = 0; chartDataBid.length = 0; chartDataAsk.length = 0;
     if(symbol === 'BTCUSDT') loadHistory(); 
     initTV(); 
     tickMain();
   }
-
-  $('pairSearch').addEventListener('change', (e) => {
-    if (e.target.value) changeSymbol(e.target.value);
-  });
 
   $('depthRange').value = "5.0";
   $('depthVal').textContent = "5.0%";
@@ -396,6 +472,7 @@
     });
   });
 
+  // Запуск при старте страницы
   loadPairs();
   initTV();
   initChart();
