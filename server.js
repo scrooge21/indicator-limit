@@ -54,9 +54,9 @@ async function publicGet(path, params = {}) {
 async function loadSymbols() {
   try {
     const data = await publicGet('/api/v3/exchangeInfo');
-    // Берем только активные спотовые пары к USDT
+    // Обновленный фильтр: проверяем и слово ENABLED, и цифру 1
     cachedSymbols = data.symbols
-      .filter(s => s.status === 'ENABLED' && s.quoteAsset === 'USDT')
+      .filter(s => (s.status === 'ENABLED' || s.status === 1 || s.status === '1') && s.quoteAsset === 'USDT')
       .map(s => s.symbol);
     console.log(`✅ Загружено ${cachedSymbols.length} торговых пар с MEXC.`);
   } catch (e) { 
