@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MEXC Pro Depth Indicator</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+<!-- Официальная библиотека TradingView Lightweight Charts -->
+<script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
 
@@ -25,7 +25,6 @@
   .logo { font-family: var(--mono); font-weight: 600; font-size: 16px; }
   .logo span { color: var(--accent); }
   
-  /* Новая кнопка выбора пары */
   .search-box { display: flex; align-items: center; gap: 10px; }
   .pair-select-btn { background: var(--bg2); border: 1px solid var(--border2); color: var(--text0); padding: 8px 16px; border-radius: 4px; font-family: var(--mono); font-size: 15px; font-weight: bold; cursor: pointer; transition: 0.2s; min-width: 150px; text-align: left; display: flex; justify-content: space-between; align-items: center; }
   .pair-select-btn:hover { border-color: var(--accent); background: var(--bg3); }
@@ -36,9 +35,15 @@
   input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: var(--accent); cursor: pointer; }
   .val-badge { font-family: var(--mono); font-size: 12px; color: var(--accent); }
 
-  .chart-area { height: 400px; background: var(--bg1); border-bottom: 1px solid var(--border); }
+  /* Главный график */
+  .chart-wrapper { position: relative; width: 100%; height: 450px; background: var(--bg0); border-bottom: 1px solid var(--border); }
+  #tv_chart_container { width: 100%; height: 100%; }
+  .chart-legend { position: absolute; top: 12px; left: 16px; z-index: 10; font-family: var(--mono); font-size: 12px; background: rgba(15,18,23,0.7); padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border2); pointer-events: none; }
+  .chart-legend div { margin-bottom: 4px; }
+  .chart-legend span { font-weight: 600; }
 
-  .indicator-grid { display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 1px; background: var(--border); }
+  /* Нижняя панель (Метрики и Стакан) */
+  .indicator-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); }
   .panel { background: var(--bg1); display: flex; flex-direction: column; position: relative; }
 
   .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); margin: 16px; border-radius: 6px; overflow: hidden; }
@@ -66,8 +71,7 @@
   .c-red { color: var(--red); } .c-green { color: var(--green); }
   .price-mid { text-align: center; padding: 8px; font-family: var(--mono); font-size: 16px; font-weight: bold; background: var(--bg2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 
-  .chart-overlay { position: absolute; top: 10px; left: 16px; font-family: var(--mono); font-size: 11px; background: rgba(15,18,23,0.8); padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border2); z-index: 10;}
-  
+  /* Сканер */
   .scanner-area { flex: 1; padding: 20px; background: var(--bg0); }
   .scanner-title { font-family: var(--mono); font-size: 14px; margin-bottom: 12px; color: var(--text1); display: flex; justify-content: space-between; align-items: center;}
   table { width: 100%; border-collapse: collapse; background: var(--bg1); border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
@@ -81,7 +85,7 @@
   .b-bear { background: var(--red-bg); color: var(--red); }
   .flex-v { display: flex; flex-direction: column; }
 
-  /* --- МОДАЛЬНОЕ ОКНО ПОИСКА --- */
+  /* Модальное окно */
   .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 12, 15, 0.8); backdrop-filter: blur(4px); z-index: 9999; display: none; justify-content: center; align-items: center; }
   .modal-content { background: var(--bg1); border: 1px solid var(--border); width: 400px; max-width: 90%; border-radius: 8px; display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
   .modal-header { padding: 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
@@ -96,7 +100,6 @@
   .pair-item:hover { background: var(--bg3); color: var(--accent); }
   .pair-item span { color: var(--text2); font-size: 12px; }
 
-  /* Scrollbar для модалки */
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
@@ -113,7 +116,6 @@
   </div>
 </div>
 
-<!-- Модальное окно для выбора пар -->
 <div id="searchModal" class="modal-overlay">
   <div class="modal-content">
     <div class="modal-header">
@@ -124,7 +126,6 @@
       <input type="text" id="modalSearchInput" placeholder="Поиск (например, SOL)..." autocomplete="off">
     </div>
     <div id="modalPairList" class="pair-list">
-      <!-- Сюда подгрузятся пары -->
       <div style="padding: 20px; text-align: center; color: var(--text2); font-family: var(--mono);">Загрузка пар с MEXC...</div>
     </div>
   </div>
@@ -143,9 +144,18 @@
   </select>
 </div>
 
-<div class="chart-area" id="tv_chart_container"></div>
+<!-- Единый продвинутый график -->
+<div class="chart-wrapper">
+  <div class="chart-legend">
+    <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;" id="legSymbol">BTCUSDT</div>
+    <div>BID SPOT TOTAL: <span id="legBid" class="c-green">—</span></div>
+    <div>ASK SPOT TOTAL: <span id="legAsk" class="c-red">—</span></div>
+  </div>
+  <div id="tv_chart_container"></div>
+</div>
 
 <div class="indicator-grid">
+  <!-- Метрики -->
   <div class="panel">
     <div style="padding:16px 16px 0; font-family:var(--mono); color:var(--text1)">Объёмы ордеров (в USDT) на глубине <span id="lblDepth">5.0</span>%</div>
     <div class="metrics">
@@ -169,20 +179,12 @@
     </div>
   </div>
 
+  <!-- Стакан -->
   <div class="panel">
     <div class="book-header"><span>Цена</span><span>Кол-во</span><span>Всего (USDT)</span></div>
     <div class="book-rows flex-v" style="justify-content: flex-end;" id="askRows"></div>
     <div class="price-mid" id="midPrice">—</div>
     <div class="book-rows flex-v" style="justify-content: flex-start;" id="bidRows"></div>
-  </div>
-
-  <!-- Панель графика объемов -->
-  <div class="panel" style="padding: 16px;">
-    <div class="chart-overlay">
-      <div>BID SPOT TOTAL: <span id="legBid" class="c-green">—</span></div>
-      <div style="margin-top:4px;">ASK SPOT TOTAL: <span id="legAsk" class="c-red">—</span></div>
-    </div>
-    <canvas id="histChart" style="height: 100%; width: 100%;"></canvas>
   </div>
 </div>
 
@@ -214,19 +216,19 @@
   let intervalMs = 3000;
   let timer = null;
   let scannerTimer = null;
-  let tvWidget = null;
 
-  let allSymbols = []; // Хранит все загруженные пары с биржи
+  // Данные Lightweight Chart
+  let chart = null;
+  let candleSeries = null;
+  let bidSeries = null;
+  let askSeries = null;
+  let currentCandle = null; // Для обновления текущей свечи в реальном времени
+
+  let allSymbols = []; 
   let scannerData = [];
   let sortCol = 'bidUSD';
   let sortDesc = true;
-  // Пары по умолчанию для сканера (можете менять)
   const watchlist = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'BNBUSDT', 'DOGEUSDT', 'PEPEUSDT', 'WIFUSDT'];
-
-  const chartLabels = [];
-  const chartDataBid = [];
-  const chartDataAsk = [];
-  let chart = null;
 
   const $ = id => document.getElementById(id);
 
@@ -237,16 +239,125 @@
   }
   function fmtPrice(p) { return p > 1000 ? p.toLocaleString('en-US') : p.toFixed(4); }
 
-  function initTV() {
-    tvWidget = new TradingView.widget({
-      "autosize": true, "symbol": `MEXC:${symbol}`, "interval": "15",
-      "timezone": "Europe/Moscow", "theme": "dark", "style": "1", "locale": "ru",
-      "enable_publishing": false, "backgroundColor": "#0a0c0f", "gridColor": "#1e2535",
-      "container_id": "tv_chart_container"
+  // --- ИНИЦИАЛИЗАЦИЯ НОВОГО ГРАФИКА ---
+  function initAdvancedChart() {
+    const container = $('tv_chart_container');
+    container.innerHTML = ''; 
+
+    chart = LightweightCharts.createChart(container, {
+      layout: { background: { type: 'solid', color: '#0a0c0f' }, textColor: '#a0aec0' },
+      grid: { vertLines: { color: '#1e2535' }, horzLines: { color: '#1e2535' } },
+      timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#1e2535' },
+      rightPriceScale: { borderColor: '#1e2535', scaleMargins: { top: 0.1, bottom: 0.1 } },
+      leftPriceScale: { 
+        visible: true, 
+        borderColor: '#1e2535',
+        scaleMargins: { top: 0.1, bottom: 0.1 },
+        tickMarkFormatter: (price) => {
+          if (price >= 1e6) return (price / 1e6).toFixed(1) + 'M';
+          if (price >= 1e3) return (price / 1e3).toFixed(1) + 'K';
+          return price;
+        }
+      } 
     });
+
+    // 1. Японские свечи (Правая шкала)
+    candleSeries = chart.addCandlestickSeries({
+      upColor: '#00d68f', downColor: '#ff4d6d', borderVisible: false,
+      wickUpColor: '#00d68f', wickDownColor: '#ff4d6d',
+      priceScaleId: 'right'
+    });
+
+    // 2. Линия Покупок (Левая шкала)
+    bidSeries = chart.addLineSeries({
+      color: '#00d68f', lineWidth: 2, priceScaleId: 'left',
+      crosshairMarkerVisible: false, lastValueVisible: false
+    });
+
+    // 3. Линия Продаж (Левая шкала)
+    askSeries = chart.addLineSeries({
+      color: '#ff4d6d', lineWidth: 2, priceScaleId: 'left',
+      crosshairMarkerVisible: false, lastValueVisible: false
+    });
+
+    // При изменении размера окна
+    new ResizeObserver(entries => {
+      if (entries.length === 0 || entries[0].target !== container) return;
+      const newRect = entries[0].contentRect;
+      chart.applyOptions({ width: newRect.width, height: newRect.height });
+    }).observe(container);
   }
 
-  // --- ЛОГИКА ОКНА ПОИСКА ---
+  // --- ЗАГРУЗКА ДАННЫХ ДЛЯ ГРАФИКА ---
+  async function loadChartData() {
+    // 1. Грузим свечи с MEXC (интервал 1 минута)
+    try {
+      const res = await fetch(`https://api.mexc.com/api/v3/klines?symbol=${symbol}&interval=1m&limit=120`);
+      const data = await res.json();
+      const candles = data.map(d => ({
+        time: Math.floor(d[0] / 1000), 
+        open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4])
+      }));
+      candleSeries.setData(candles);
+      if(candles.length > 0) currentCandle = candles[candles.length - 1];
+    } catch(e) {}
+
+    // 2. Грузим историю лимитов из НАШЕЙ БД
+    if (symbol === 'BTCUSDT') {
+      try {
+        const res = await fetch('/api/history');
+        const history = await res.json();
+        
+        const bidData = []; const askData = [];
+        let lastTime = 0;
+        
+        history.forEach(row => {
+          const t = Math.floor(new Date(row.time).getTime() / 1000);
+          // Библиотека требует уникальное и возрастающее время
+          if (t > lastTime) {
+            bidData.push({ time: t, value: row.bidUSD });
+            askData.push({ time: t, value: row.askUSD });
+            lastTime = t;
+          }
+        });
+        bidSeries.setData(bidData);
+        askSeries.setData(askData);
+      } catch(e) {}
+    } else {
+      // Если пара не BTC, просто очищаем линии
+      bidSeries.setData([]);
+      askSeries.setData([]);
+    }
+  }
+
+  // --- ОБНОВЛЕНИЕ ГРАФИКА В РЕАЛЬНОМ ВРЕМЕНИ ---
+  function updateChartLive(price, bidUSD, askUSD) {
+    const now = Math.floor(Date.now() / 1000);
+    
+    // Обновляем свечу
+    const coeff = 60;
+    const candleTime = Math.floor(now / coeff) * coeff; // Начало текущей минуты
+
+    if (!currentCandle || currentCandle.time !== candleTime) {
+      currentCandle = { time: candleTime, open: price, high: price, low: price, close: price };
+    } else {
+      currentCandle.high = Math.max(currentCandle.high, price);
+      currentCandle.low = Math.min(currentCandle.low, price);
+      currentCandle.close = price;
+    }
+    candleSeries.update(currentCandle);
+
+    // Обновляем линии лимитов
+    try {
+      bidSeries.update({ time: now, value: bidUSD });
+      askSeries.update({ time: now, value: askUSD });
+    } catch(e) {
+      // Если время совпало с предыдущим тиком, библиотека может ругнуться, это не критично
+    }
+  }
+
+
+  // --- МОДАЛЬНОЕ ОКНО ---
   async function loadPairs() {
     try {
       const res = await fetch('/api/symbols');
@@ -258,89 +369,28 @@
   function renderModalList(list) {
     $('modalPairList').innerHTML = list.map(s => {
       const display = s.replace('USDT', ' / USDT');
-      return `<div class="pair-item" onclick="selectPairFromModal('${s}')">
-                ${display} <span>Спот</span>
-              </div>`;
+      return `<div class="pair-item" onclick="selectPairFromModal('${s}')">${display} <span>Спот</span></div>`;
     }).join('');
   }
 
   $('btnOpenSearch').addEventListener('click', () => {
     $('searchModal').style.display = 'flex';
     $('modalSearchInput').value = '';
-    renderModalList(allSymbols); // Сбрасываем фильтр при открытии
+    renderModalList(allSymbols);
     setTimeout(() => $('modalSearchInput').focus(), 100);
   });
-
-  $('btnCloseSearch').addEventListener('click', () => {
-    $('searchModal').style.display = 'none';
-  });
-
-  // Закрытие по клику вне окна
-  $('searchModal').addEventListener('click', (e) => {
-    if (e.target === $('searchModal')) $('searchModal').style.display = 'none';
-  });
-
-  // Живой поиск
+  $('btnCloseSearch').addEventListener('click', () => { $('searchModal').style.display = 'none'; });
+  $('searchModal').addEventListener('click', (e) => { if (e.target === $('searchModal')) $('searchModal').style.display = 'none'; });
   $('modalSearchInput').addEventListener('input', (e) => {
     const val = e.target.value.toUpperCase();
-    const filtered = allSymbols.filter(s => s.includes(val));
-    renderModalList(filtered);
+    renderModalList(allSymbols.filter(s => s.includes(val)));
   });
-
   function selectPairFromModal(sym) {
     $('searchModal').style.display = 'none';
     changeSymbol(sym);
   }
-  // --------------------------
 
-  function initChart() {
-    chart = new Chart($('histChart').getContext('2d'), {
-      type: 'line',
-      data: { 
-        labels: chartLabels, 
-        datasets: [
-          { label: 'BID (Покупки)', data: chartDataBid, borderColor: '#00d68f', borderWidth: 1.5, pointRadius:0, tension: 0.1 },
-          { label: 'ASK (Продажи)', data: chartDataAsk, borderColor: '#ff4d6d', borderWidth: 1.5, pointRadius:0, tension: 0.1 }
-        ] 
-      },
-      options: { 
-        animation: false, 
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
-        scales: { 
-          x: { display: false }, 
-          y: { 
-            position: 'right', 
-            grid: { color: '#1e2535' },
-            ticks: {
-              color: '#5a6a80',
-              font: { family: "'IBM Plex Mono'", size: 10 },
-              callback: function(value) { return fmtMoney(value); } 
-            }
-          } 
-        } 
-      }
-    });
-  }
-
-  async function loadHistory() {
-    if (symbol !== 'BTCUSDT') return; 
-    try {
-      const res = await fetch('/api/history');
-      const history = await res.json();
-      
-      chartLabels.length = 0; chartDataBid.length = 0; chartDataAsk.length = 0;
-      
-      history.forEach(row => {
-        const d = new Date(row.time);
-        chartLabels.push(d.toLocaleTimeString('ru-RU'));
-        chartDataBid.push(row.bidUSD);
-        chartDataAsk.push(row.askUSD);
-      });
-      if(chart) chart.update('none');
-    } catch(e) {}
-  }
-
+  // --- ОТРИСОВКА СТАКАНА ---
   function renderBook(bids, asks, price) {
     $('midPrice').textContent = fmtPrice(price);
     
@@ -365,6 +415,7 @@
     }).join('');
   }
 
+  // --- ОСНОВНОЙ ЦИКЛ ОБНОВЛЕНИЯ ---
   async function tickMain() {
     try {
       const res = await fetch(`/api/data?symbol=${symbol}&depth=${depthPct}`);
@@ -386,22 +437,12 @@
       $('iAskFill').style.width = `${100 - pct}%`;
 
       renderBook(book.bids, book.asks, price);
-
-      const timeStr = new Date().toLocaleTimeString('ru-RU');
-      chartLabels.push(timeStr);
-      chartDataBid.push(depth.bidVolUSD);
-      chartDataAsk.push(depth.askVolUSD);
-      
-      if (chartLabels.length > 120) { 
-        chartLabels.shift(); 
-        chartDataBid.shift(); 
-        chartDataAsk.shift(); 
-      }
-      chart.update('none');
+      updateChartLive(price, depth.bidVolUSD, depth.askVolUSD);
 
     } catch (e) {}
   }
 
+  // --- СКАНЕР ---
   async function tickScanner() {
     try {
       const res = await fetch(`/api/scanner?symbols=${watchlist.join(',')}&depth=${depthPct}`);
@@ -435,15 +476,18 @@
     }).join('');
   }
 
+  // --- ОБРАБОТЧИКИ УПРАВЛЕНИЯ ---
   function changeSymbol(newSym) {
     symbol = newSym.toUpperCase();
-    // Обновляем текст на кнопке
     $('btnOpenSearch').innerHTML = symbol.replace('USDT', ' / USDT') + ' <span style="font-size:10px; color:var(--text2)">▼</span>';
+    $('legSymbol').textContent = symbol;
     
-    chartLabels.length = 0; chartDataBid.length = 0; chartDataAsk.length = 0;
-    if(symbol === 'BTCUSDT') loadHistory(); 
-    initTV(); 
-    tickMain();
+    currentCandle = null;
+    candleSeries.setData([]);
+    bidSeries.setData([]);
+    askSeries.setData([]);
+    
+    loadChartData().then(() => tickMain());
   }
 
   $('depthRange').value = "5.0";
@@ -472,12 +516,11 @@
     });
   });
 
-  // Запуск при старте страницы
+  // --- СТАРТ ---
   loadPairs();
-  initTV();
-  initChart();
+  initAdvancedChart();
   
-  loadHistory().then(() => {
+  loadChartData().then(() => {
     tickMain();
     timer = setInterval(tickMain, intervalMs);
   });
