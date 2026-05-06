@@ -8,12 +8,14 @@
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
- 
+
 <div class="header">
     <div class="logo">MEXC <span>PRO</span></div>
     <div class="toolbar">
-        <input type="text" id="symbolInput" class="search-input" value="BTCUSDT" placeholder="BTCUSDT">
-        <button class="btn" onclick="changeSymbol()">Загрузить</button>
+        <div class="search-wrap">
+            <input type="text" id="symbolInput" class="search-input" value="BTCUSDT" placeholder="Поиск пары..." autocomplete="off">
+            <div class="search-dropdown" id="searchDropdown"></div>
+        </div>
         <div style="width: 1px; height: 20px; background: var(--border); margin: 0 10px;"></div>
         <!-- Кнопки Таймфреймов -->
         <button class="btn tf-btn active" data-tf="1m">1m</button>
@@ -22,7 +24,7 @@
         <button class="btn tf-btn" data-tf="60m">1H</button>
     </div>
 </div>
- 
+
 <div class="main-grid">
     <!-- Левая колонка: График и Данные -->
     <div class="left-col">
@@ -44,7 +46,7 @@
         </div>
         <div id="log">System initializing...</div>
     </div>
- 
+
     <!-- Правая колонка: Стакан (Order Book) -->
     <div class="right-col">
         <div class="ob-header">Order Book (Depth 5%)</div>
@@ -60,21 +62,88 @@
         </div>
     </div>
 </div>
- 
+
 <script>
     let symbol = 'BTCUSDT';
-    let interval = '1m'; // Текущий таймфрейм
+    let interval = '1m';
+    let allSymbols = [];
     
-    // Секунды для правильного формирования свечей на лету
     const tfSeconds = { '1m': 60, '5m': 300, '15m': 900, '60m': 3600 };
- 
+
     let chart, candleSeries, bidLine, askLine;
     const $ = id => document.getElementById(id);
- 
+
     function writeLog(m) { $('log').innerText = `[${new Date().toLocaleTimeString()}] ${m}`; }
     function fmtPrice(p) { return p > 1000 ? p.toLocaleString('en-US') : p.toFixed(4); }
     function fmtNum(n) { return n >= 1e6 ? (n/1e6).toFixed(2)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'K' : n.toFixed(1); }
- 
+
+    // ── Search autocomplete ───────────────────────────────────────────────
+    async function loadSymbols() {
+        try {
+            const res = await fetch('/api/symbols');
+            allSymbols = await res.json();
+        } catch(e) { allSymbols = ['BTCUSDT','ETHUSDT','SOLUSDT']; }
+    }
+
+    function showDropdown(query) {
+        const dd = $('searchDropdown');
+        const q = query.toUpperCase();
+        if (!q) { dd.style.display = 'none'; return; }
+        const matches = allSymbols.filter(s => s.startsWith(q) || s.includes(q)).slice(0, 10);
+        if (!matches.length) { dd.style.display = 'none'; return; }
+        dd.innerHTML = matches.map(s => {
+            const base = s.replace(/USDT$/, '');
+            const hi = s.replace(q, `<mark>${q}</mark>`);
+            return `<div class="dd-item" data-symbol="${s}"><span class="dd-base">${base}</span><span class="dd-quote">/USDT</span></div>`;
+        }).join('');
+        dd.style.display = 'block';
+        dd.querySelectorAll('.dd-item').forEach(el => {
+            el.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                selectSymbol(el.dataset.symbol);
+            });
+        });
+    }
+
+    function selectSymbol(sym) {
+        $('symbolInput').value = sym;
+        $('searchDropdown').style.display = 'none';
+        symbol = sym;
+        candleSeries.setData([]); bidLine.setData([]); askLine.setData([]);
+        $('obAsks').innerHTML = ''; $('obBids').innerHTML = '';
+        loadKlines(); loadHistory(); tick();
+        writeLog(`Загрузка ${sym}...`);
+    }
+
+    $('symbolInput') && document.addEventListener('DOMContentLoaded', () => {
+        const inp = $('symbolInput');
+        inp.addEventListener('input', () => showDropdown(inp.value));
+        inp.addEventListener('focus', () => showDropdown(inp.value));
+        inp.addEventListener('blur', () => setTimeout(() => { $('searchDropdown').style.display = 'none'; }, 150));
+        inp.addEventListener('keydown', (e) => {
+            const dd = $('searchDropdown');
+            const items = dd.querySelectorAll('.dd-item');
+            const active = dd.querySelector('.dd-item.hovered');
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                const next = active ? (active.nextElementSibling || items[0]) : items[0];
+                if (active) active.classList.remove('hovered');
+                if (next) { next.classList.add('hovered'); inp.value = next.dataset.symbol; }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                const prev = active ? (active.previousElementSibling || items[items.length-1]) : items[items.length-1];
+                if (active) active.classList.remove('hovered');
+                if (prev) { prev.classList.add('hovered'); inp.value = prev.dataset.symbol; }
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                const sym = (active ? active.dataset.symbol : inp.value.toUpperCase().trim());
+                if (sym) selectSymbol(sym);
+            } else if (e.key === 'Escape') {
+                dd.style.display = 'none';
+            }
+        });
+    });
+
     function initChart() {
         const container = $('chart');
         chart = LightweightCharts.createChart(container, {
@@ -84,14 +153,14 @@
             leftPriceScale: { visible: true, borderColor: '#222633' },
             timeScale: { borderColor: '#222633', timeVisible: true }
         });
- 
+
         candleSeries = chart.addCandlestickSeries({ priceScaleId: 'right', upColor: '#00E592', downColor: '#FF4976', wickUpColor: '#00E592', wickDownColor: '#FF4976', borderVisible: false });
         bidLine = chart.addLineSeries({ color: '#00E592', priceScaleId: 'left', lineWidth: 2, crosshairMarkerVisible: false });
         askLine = chart.addLineSeries({ color: '#FF4976', priceScaleId: 'left', lineWidth: 2, crosshairMarkerVisible: false });
         
         window.addEventListener('resize', () => chart.resize(container.clientWidth, container.clientHeight));
     }
- 
+
     async function loadKlines() {
         try {
             writeLog(`Загрузка свечей ${interval}...`);
@@ -102,30 +171,18 @@
             })));
         } catch(e) { writeLog("Ошибка загрузки свечей."); }
     }
- 
+
     async function loadHistory() {
         try {
             const res = await fetch(`/api/history?symbol=${symbol}`);
             const data = await res.json();
             if (data.length > 0) {
-                const coeff = tfSeconds[interval];
-                // Агрегируем точки под текущий таймфрейм (усредняем по бакетам)
-                const buckets = {};
-                data.forEach(d => {
-                    const t = Math.floor(new Date(d.timestamp).getTime() / 1000);
-                    const bucket = Math.floor(t / coeff) * coeff;
-                    if (!buckets[bucket]) buckets[bucket] = { bidUSD: 0, askUSD: 0, count: 0 };
-                    buckets[bucket].bidUSD += d.bidUSD;
-                    buckets[bucket].askUSD += d.askUSD;
-                    buckets[bucket].count++;
-                });
-                const sorted = Object.keys(buckets).map(Number).sort((a, b) => a - b);
-                bidLine.setData(sorted.map(t => ({ time: t, value: buckets[t].bidUSD / buckets[t].count })));
-                askLine.setData(sorted.map(t => ({ time: t, value: buckets[t].askUSD / buckets[t].count })));
+                bidLine.setData(data.map(d => ({ time: new Date(d.timestamp).getTime()/1000, value: d.bidUSD })));
+                askLine.setData(data.map(d => ({ time: new Date(d.timestamp).getTime()/1000, value: d.askUSD })));
             }
         } catch(e) {}
     }
- 
+
     function renderOrderBook(book, currentPrice) {
         $('obMidPrice').innerText = fmtPrice(currentPrice);
         
@@ -141,7 +198,7 @@
             htmlAsk += `<div class="ob-row"><div class="ob-bg bg-red" style="width:${w}%"></div><span class="c-red">${fmtPrice(p)}</span><span>${v.toFixed(3)}</span><span>${fmtNum(askTot)}</span></div>`;
         });
         $('obAsks').innerHTML = htmlAsk;
- 
+
         // Bids (Зеленые, сверху вниз)
         const bids = book.bids.slice(0, 15);
         const maxBid = Math.max(...bids.map(b => b[0]*b[1]));
@@ -155,49 +212,44 @@
         });
         $('obBids').innerHTML = htmlBid;
     }
- 
+
     async function tick() {
         try {
             const res = await fetch(`/api/data?symbol=${symbol}&depth=5`);
             const data = await res.json();
             if (data.error) return;
- 
+
             // Метрики
             $('vBid').innerText = '$' + fmtNum(data.bidUSD);
             $('vAsk').innerText = '$' + fmtNum(data.askUSD);
             const imb = data.askUSD > 0 ? (data.bidUSD / data.askUSD) : 0;
             $('vImb').innerText = imb.toFixed(2) + 'x';
             $('vImb').style.color = imb > 1.2 ? 'var(--green)' : imb < 0.8 ? 'var(--red)' : 'white';
- 
+
             // Обновление графика
             const t = Math.floor(Date.now() / 1000);
+            bidLine.update({ time: t, value: data.bidUSD });
+            askLine.update({ time: t, value: data.askUSD });
+            
+            // Расчет свечи на лету зависит от таймфрейма
             const coeff = tfSeconds[interval];
             const candleTime = Math.floor(t / coeff) * coeff;
- 
-            // Bid/Ask линии тоже привязываем к текущему таймфрейму
-            try { bidLine.update({ time: candleTime, value: data.bidUSD }); } catch(e) {}
-            try { askLine.update({ time: candleTime, value: data.askUSD }); } catch(e) {}
             
             // Если библиотека ругается на "time must be strictly increasing", оборачиваем в try
             try {
                 candleSeries.update({ time: candleTime, open: data.price, high: data.price, low: data.price, close: data.price });
             } catch(e) {}
- 
+
             renderOrderBook(data.book, data.price);
             writeLog(`Обновлено: ${symbol} | Цена: $${data.price}`);
         } catch(e) { writeLog("Ошибка соединения..."); }
     }
- 
+
     function changeSymbol() {
-        const val = $('symbolInput').value.toUpperCase();
-        if (val) {
-            symbol = val;
-            candleSeries.setData([]); bidLine.setData([]); askLine.setData([]);
-            $('obAsks').innerHTML = ''; $('obBids').innerHTML = '';
-            loadKlines(); loadHistory(); tick();
-        }
+        const val = $('symbolInput').value.toUpperCase().trim();
+        if (val) selectSymbol(val);
     }
- 
+
     // Обработка клика по таймфреймам
     document.querySelectorAll('.tf-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -205,18 +257,16 @@
             e.target.classList.add('active');
             interval = e.target.getAttribute('data-tf');
             candleSeries.setData([]);
-            bidLine.setData([]);
-            askLine.setData([]);
             loadKlines();
-            loadHistory(); // Перезагружаем историю с агрегацией под новый таймфрейм
         });
     });
- 
+
     window.onload = () => {
         initChart();
+        loadSymbols();
         loadKlines();
         loadHistory();
-        setInterval(tick, 3000); // Обновление каждые 3 секунды
+        setInterval(tick, 3000);
         tick();
     };
 </script>
