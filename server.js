@@ -1,201 +1,91 @@
-// server.js
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { config } from 'dotenv';
-import fetch from 'node-fetch';
 import mongoose from 'mongoose';
 
-// Загружаем переменные окружения
 config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 const BASE_URL = 'https://api.mexc.com';
 
-let cachedSymbols = []; 
+let cachedSymbols = [];
 
-// ─── ПОДКЛЮЧЕНИЕ К БАЗЕ ДАННЫХ MONGODB ──────────────────────
-const MONGO_URI = process.env.MONGODB_URI;
-
-if (!MONGO_URI) {
-  console.warn("⚠️ ВНИМАНИЕ: MONGODB_URI не найден в переменных окружения!");
-} else {
-  mongoose.connect(MONGO_URI)
-    .then(() => console.log('✅ Успешно подключено к MongoDB'))
-    .catch(err => console.error('❌ Ошибка подключения к MongoDB:', err));
+// Подключение к БД
+if (process.env.MONGODB_URI) {
+    mongoose.connect(process.env.MONGODB_URI)
+        .then(() => console.log('✅ MongoDB Connected'))
+        .catch(err => console.error('❌ MongoDB Error:', err));
 }
 
-// Схема для сохранения истории в базу данных
 const historySchema = new mongoose.Schema({
-  timestamp: { type: Date, default: Date.now },
-  symbol: String,
-  price: Number,
-  bidUSD: Number,
-  askUSD: Number,
-  imbalance: Number
+    timestamp: { type: Date, default: Date.now },
+    symbol: String, price: Number, bidUSD: Number, askUSD: Number, imbalance: Number
 });
-
 const History = mongoose.model('History', historySchema);
 
-// Список пар, для которых сервер собирает историю 24/7
-const HISTORY_PAIRS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'PEPEUSDT'];
-
-// ─── Утилиты ───────────────────────────────────────────────
-async function publicGet(path, params = {}) {
-  const url = `${BASE_URL}${path}?${new URLSearchParams(params)}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
-  return res.json();
-}
-
-async function loadSymbols() {
-  try {
-    const data = await publicGet('/api/v3/exchangeInfo');
-    cachedSymbols = data.symbols
-      .filter(s => (s.status === 'ENABLED' || s.status === 1 || s.status === '1') && s.quoteAsset === 'USDT')
-      .map(s => s.symbol);
-    console.log(`✅ Загружено ${cachedSymbols.length} торговых пар с MEXC.`);
-  } catch (e) { 
-    console.error('Ошибка загрузки пар:', e.message); 
-  }
-}
-loadSymbols();
-
-// ─── Логика Индикатора ──────────────────────────────────────
-function calcDepthImbalance(bids, asks, currentPrice, depthPct) {
-  const lowerBound = currentPrice * (1 - depthPct / 100);
-  const upperBound = currentPrice * (1 + depthPct / 100);
-
-  const validBids = bids.filter(([p]) => parseFloat(p) >= lowerBound);
-  const validAsks = asks.filter(([p]) => parseFloat(p) <= upperBound);
-
-  const bidVolume = validBids.reduce((sum, [, v]) => sum + parseFloat(v), 0);
-  const askVolume = validAsks.reduce((sum, [, v]) => sum + parseFloat(v), 0);
-
-  const bidVolUSD = validBids.reduce((sum, [p, v]) => sum + (parseFloat(p) * parseFloat(v)), 0);
-  const askVolUSD = validAsks.reduce((sum, [p, v]) => sum + (parseFloat(p) * parseFloat(v)), 0);
-
-  const imbalance = askVolume > 0 ? bidVolume / askVolume : 0;
-  return { bidVolume, askVolume, bidVolUSD, askVolUSD, imbalance };
-}
-
-// ─── ФОНОВЫЙ СБОРЩИК В БАЗУ ДАННЫХ ──────────────────────────
+// Фоновый сборщик (BTC, ETH, SOL)
+const HISTORY_PAIRS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
 async function backgroundLogger() {
-  if (mongoose.connection.readyState !== 1) return; 
-
-  try {
-    const depthPct = 5.0;
-
-    for (const symbol of HISTORY_PAIRS) {
-      const [book, priceData] = await Promise.all([
-        publicGet('/api/v3/depth', { symbol, limit: 1000 }),
-        publicGet('/api/v3/ticker/price', { symbol })
-      ]);
-
-      const price = parseFloat(priceData.price);
-      const depth = calcDepthImbalance(book.bids, book.asks, price, depthPct);
-
-      await History.create({
-        symbol: symbol,
-        price: price,
-        bidUSD: depth.bidVolUSD,
-        askUSD: depth.askVolUSD,
-        imbalance: depth.imbalance
-      });
-
-      const count = await History.countDocuments({ symbol });
-      if (count > 5000) {
-        const oldest = await History.find({ symbol }).sort({ timestamp: 1 }).limit(count - 5000);
-        const idsToDelete = oldest.map(doc => doc._id);
-        await History.deleteMany({ _id: { $in: idsToDelete } });
-      }
-    }
-  } catch (err) {
-    // Тихо игнорируем ошибку, чтобы сервер не падал
-  }
+    if (mongoose.connection.readyState !== 1) return;
+    try {
+        for (const symbol of HISTORY_PAIRS) {
+            const ticker = await (await fetch(`${BASE_URL}/api/v3/ticker/price?symbol=${symbol}`)).json();
+            const book = await (await fetch(`${BASE_URL}/api/v3/depth?symbol=${symbol}&limit=1000`)).json();
+            const price = parseFloat(ticker.price);
+            const bidUSD = book.bids.filter(b => b[0] >= price * 0.95).reduce((s, b) => s + (b[0] * b[1]), 0);
+            const askUSD = book.asks.filter(a => a[0] <= price * 1.05).reduce((s, a) => s + (a[0] * a[1]), 0);
+            await History.create({ symbol, price, bidUSD, askUSD, imbalance: askUSD > 0 ? bidUSD / askUSD : 0 });
+        }
+    } catch (e) {}
 }
-setInterval(backgroundLogger, 15000);
+setInterval(backgroundLogger, 20000);
 
-
-// ─── Роуты Сервера (API) ────────────────────────────────────
-
+// API
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.get('/api/symbols', (req, res) => res.json(cachedSymbols));
-
-// ❗ ВОТ ЭТОТ МАРШРУТ БЫЛ ПРОПУЩЕН (Загрузка свечей через сервер)
-app.get('/api/klines', async (req, res) => {
-  try {
-    const symbol = req.query.symbol || 'BTCUSDT';
-    const data = await publicGet('/api/v3/klines', { symbol, interval: '1m', limit: 120 });
-    res.json(data);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+app.get('/api/symbols', async (req, res) => {
+    if (cachedSymbols.length > 0) return res.json(cachedSymbols);
+    try {
+        const data = await (await fetch(`${BASE_URL}/api/v3/exchangeInfo`)).json();
+        cachedSymbols = data.symbols.filter(s => s.quoteAsset === 'USDT').map(s => s.symbol);
+        res.json(cachedSymbols);
+    } catch (e) { res.json(['BTCUSDT', 'ETHUSDT']); }
 });
 
-app.get('/api/history', async (req, res) => {
-  try {
-    if (mongoose.connection.readyState !== 1) return res.json([]);
-    const symbol = req.query.symbol || 'BTCUSDT';
-    const records = await History.find({ symbol: symbol }).sort({ timestamp: -1 }).limit(200);
-    records.reverse();
-    
-    const history = records.map(r => ({
-      time: r.timestamp, symbol: r.symbol, imbalance: r.imbalance, bidUSD: r.bidUSD, askUSD: r.askUSD
-    }));
-    res.json(history);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+app.get('/api/klines', async (req, res) => {
+    try {
+        const r = await fetch(`${BASE_URL}/api/v3/klines?symbol=${req.query.symbol}&interval=1m&limit=100`);
+        const data = await r.json();
+        res.json(data);
+    } catch (e) { res.status(500).json([]); }
 });
 
 app.get('/api/data', async (req, res) => {
-  try {
-    const symbol = req.query.symbol || 'BTCUSDT';
-    const depthPct = parseFloat(req.query.depth) || 5.0; 
-
-    const [bookData, priceData] = await Promise.all([
-      publicGet('/api/v3/depth', { symbol, limit: 1000 }),
-      publicGet('/api/v3/ticker/price', { symbol }),
-    ]);
-
-    const price = parseFloat(priceData.price);
-    const depth = calcDepthImbalance(bookData.bids, bookData.asks, price, depthPct);
-
-    res.json({ price, book: bookData, depth });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/api/scanner', async (req, res) => {
-  try {
-    const symbols = req.query.symbols ? req.query.symbols.split(',') : ['BTCUSDT'];
-    const depthPct = parseFloat(req.query.depth) || 5.0; 
-    
-    const promises = symbols.slice(0, 20).map(async (symbol) => {
-      try {
-        const [book, priceData] = await Promise.all([
-          publicGet('/api/v3/depth', { symbol, limit: 500 }), 
-          publicGet('/api/v3/ticker/price', { symbol })
+    try {
+        const symbol = req.query.symbol || 'BTCUSDT';
+        const depthPct = parseFloat(req.query.depth) || 5.0;
+        const [tRes, bRes] = await Promise.all([
+            fetch(`${BASE_URL}/api/v3/ticker/price?symbol=${symbol}`),
+            fetch(`${BASE_URL}/api/v3/depth?symbol=${symbol}&limit=1000`)
         ]);
-        const price = parseFloat(priceData.price);
-        const depth = calcDepthImbalance(book.bids, book.asks, price, depthPct);
-        return { symbol, price, ...depth };
-      } catch (e) { return null; } 
-    });
-
-    const results = (await Promise.all(promises)).filter(r => r !== null);
-    res.json(results);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+        const ticker = await tRes.json();
+        const book = await bRes.json();
+        const price = parseFloat(ticker.price);
+        const bidUSD = book.bids.filter(b => b[0] >= price * (1 - depthPct / 100)).reduce((s, b) => s + (b[0] * b[1]), 0);
+        const askUSD = book.asks.filter(a => a[0] <= price * (1 + depthPct / 100)).reduce((s, a) => s + (a[0] * a[1]), 0);
+        res.json({ price, bidUSD, askUSD, book, symbol });
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Сервер запущен: http://localhost:${PORT}`);
+app.get('/api/history', async (req, res) => {
+    try {
+        const data = await History.find({ symbol: req.query.symbol }).sort({ timestamp: -1 }).limit(100);
+        res.json(data.reverse());
+    } catch (e) { res.json([]); }
 });
+
+app.listen(PORT, () => console.log(`🚀 Server ready on ${PORT}`));
