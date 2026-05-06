@@ -2,72 +2,105 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>MEXC PRO DEPTH</title>
+    <title>MEXC PRO TERMINAL</title>
+    <!-- Подключаем наш новый файл стилей -->
+    <link rel="stylesheet" href="/style.css">
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
-    <style>
-        :root { --bg:#0a0c0f; --panel:#0f1217; --border:#1e2535; --text:#a0aec0; --green:#00d68f; --red:#ff4d6d; --accent:#4d9fff; }
-        body { background: var(--bg); color: white; font-family: 'IBM Plex Sans', sans-serif; margin: 0; overflow-x: hidden; }
-        .header { padding: 15px 20px; background: var(--panel); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; }
-        .chart-container { height: 500px; width: 100%; position: relative; border-bottom: 1px solid var(--border); }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); }
-        .panel { background: var(--panel); padding: 20px; }
-        .btn { background: var(--border); border: 1px solid var(--border); color: white; padding: 8px 15px; border-radius: 4px; cursor: pointer; }
-        .metric-val { font-size: 24px; font-weight: bold; margin: 10px 0; }
-        .c-green { color: var(--green); } .c-red { color: var(--red); }
-        #log { font-size: 10px; color: #384255; padding: 10px; font-family: monospace; }
-    </style>
 </head>
 <body>
 
 <div class="header">
-    <div style="font-weight: bold; color: var(--accent);">MEXC LIMIT TRACKER</div>
-    <button class="btn" onclick="openSearch()">Выбрать пару: <span id="curPair">BTCUSDT</span></button>
-</div>
-
-<div class="chart-container" id="chart"></div>
-
-<div class="grid">
-    <div class="panel">
-        <div style="color:var(--text)">BID VOLUME (USDT)</div>
-        <div class="metric-val c-green" id="vBid">0</div>
-        <div id="vBidCount">0 монет</div>
-    </div>
-    <div class="panel">
-        <div style="color:var(--text)">ASK VOLUME (USDT)</div>
-        <div class="metric-val c-red" id="vAsk">0</div>
-        <div id="vAskCount">0 монет</div>
+    <div class="logo">MEXC <span>PRO</span></div>
+    <div class="toolbar">
+        <input type="text" id="symbolInput" class="search-input" value="BTCUSDT" placeholder="BTCUSDT">
+        <button class="btn" onclick="changeSymbol()">Загрузить</button>
+        <div style="width: 1px; height: 20px; background: var(--border); margin: 0 10px;"></div>
+        <!-- Кнопки Таймфреймов -->
+        <button class="btn tf-btn active" data-tf="1m">1m</button>
+        <button class="btn tf-btn" data-tf="5m">5m</button>
+        <button class="btn tf-btn" data-tf="15m">15m</button>
+        <button class="btn tf-btn" data-tf="60m">1H</button>
     </div>
 </div>
 
-<div id="log">System initializing...</div>
+<div class="main-grid">
+    <!-- Левая колонка: График и Данные -->
+    <div class="left-col">
+        <div class="chart-container" id="chart"></div>
+        
+        <div class="metrics-bar">
+            <div class="metric-box">
+                <div class="m-title">BID LIMITS (USD)</div>
+                <div class="m-value c-green" id="vBid">$0</div>
+            </div>
+            <div class="metric-box">
+                <div class="m-title">ASK LIMITS (USD)</div>
+                <div class="m-value c-red" id="vAsk">$0</div>
+            </div>
+            <div class="metric-box">
+                <div class="m-title">IMBALANCE</div>
+                <div class="m-value" id="vImb">1.00x</div>
+            </div>
+        </div>
+        <div id="log">System initializing...</div>
+    </div>
+
+    <!-- Правая колонка: Стакан (Order Book) -->
+    <div class="right-col">
+        <div class="ob-header">Order Book (Depth 5%)</div>
+        <div class="ob-table-head">
+            <span>Price (USDT)</span>
+            <span>Amount</span>
+            <span>Total (USD)</span>
+        </div>
+        <div class="ob-list">
+            <div class="ob-asks" id="obAsks"></div>
+            <div class="ob-mid" id="obMidPrice">0.00</div>
+            <div class="ob-bids" id="obBids"></div>
+        </div>
+    </div>
+</div>
 
 <script>
     let symbol = 'BTCUSDT';
+    let interval = '1m'; // Текущий таймфрейм
+    
+    // Секунды для правильного формирования свечей на лету
+    const tfSeconds = { '1m': 60, '5m': 300, '15m': 900, '60m': 3600 };
+
     let chart, candleSeries, bidLine, askLine;
     const $ = id => document.getElementById(id);
 
     function writeLog(m) { $('log').innerText = `[${new Date().toLocaleTimeString()}] ${m}`; }
+    function fmtPrice(p) { return p > 1000 ? p.toLocaleString('en-US') : p.toFixed(4); }
+    function fmtNum(n) { return n >= 1e6 ? (n/1e6).toFixed(2)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'K' : n.toFixed(1); }
 
     function initChart() {
         const container = $('chart');
-        if (!window.LightweightCharts) {
-            writeLog("Error: Chart library not loaded!");
-            return;
-        }
-        
         chart = LightweightCharts.createChart(container, {
-            layout: { background: { color: '#0a0c0f' }, textColor: '#a0aec0' },
-            grid: { vertLines: { color: '#161921' }, horzLines: { color: '#161921' } },
-            rightPriceScale: { borderColor: '#1e2535' },
-            leftPriceScale: { visible: true, borderColor: '#1e2535' },
-            timeScale: { borderColor: '#1e2535', timeVisible: true }
+            layout: { background: { color: '#0b0e14' }, textColor: '#64748b' },
+            grid: { vertLines: { color: '#151822' }, horzLines: { color: '#151822' } },
+            rightPriceScale: { borderColor: '#222633' },
+            leftPriceScale: { visible: true, borderColor: '#222633' },
+            timeScale: { borderColor: '#222633', timeVisible: true }
         });
 
-        candleSeries = chart.addCandlestickSeries({ priceScaleId: 'right' });
-        bidLine = chart.addLineSeries({ color: '#00d68f', priceScaleId: 'left', lineWidth: 2 });
-        askLine = chart.addLineSeries({ color: '#ff4d6d', priceScaleId: 'left', lineWidth: 2 });
+        candleSeries = chart.addCandlestickSeries({ priceScaleId: 'right', upColor: '#00E592', downColor: '#FF4976', wickUpColor: '#00E592', wickDownColor: '#FF4976', borderVisible: false });
+        bidLine = chart.addLineSeries({ color: '#00E592', priceScaleId: 'left', lineWidth: 2, crosshairMarkerVisible: false });
+        askLine = chart.addLineSeries({ color: '#FF4976', priceScaleId: 'left', lineWidth: 2, crosshairMarkerVisible: false });
         
         window.addEventListener('resize', () => chart.resize(container.clientWidth, container.clientHeight));
+    }
+
+    async function loadKlines() {
+        try {
+            writeLog(`Загрузка свечей ${interval}...`);
+            const res = await fetch(`/api/klines?symbol=${symbol}&interval=${interval}`);
+            const data = await res.json();
+            candleSeries.setData(data.map(d => ({
+                time: d[0]/1000, open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4])
+            })));
+        } catch(e) { writeLog("Ошибка загрузки свечей."); }
     }
 
     async function loadHistory() {
@@ -81,14 +114,34 @@
         } catch(e) {}
     }
 
-    async function loadKlines() {
-        try {
-            const res = await fetch(`/api/klines?symbol=${symbol}`);
-            const data = await res.json();
-            candleSeries.setData(data.map(d => ({
-                time: d[0]/1000, open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4])
-            })));
-        } catch(e) {}
+    function renderOrderBook(book, currentPrice) {
+        $('obMidPrice').innerText = fmtPrice(currentPrice);
+        
+        // Asks (Красные, сверху вниз)
+        const asks = book.asks.slice(0, 15).reverse();
+        const maxAsk = Math.max(...asks.map(a => a[0]*a[1]));
+        let htmlAsk = '';
+        let askTot = 0;
+        asks.forEach(a => {
+            const p = parseFloat(a[0]), v = parseFloat(a[1]), usd = p*v;
+            askTot += usd;
+            const w = Math.round((usd / maxAsk) * 100);
+            htmlAsk += `<div class="ob-row"><div class="ob-bg bg-red" style="width:${w}%"></div><span class="c-red">${fmtPrice(p)}</span><span>${v.toFixed(3)}</span><span>${fmtNum(askTot)}</span></div>`;
+        });
+        $('obAsks').innerHTML = htmlAsk;
+
+        // Bids (Зеленые, сверху вниз)
+        const bids = book.bids.slice(0, 15);
+        const maxBid = Math.max(...bids.map(b => b[0]*b[1]));
+        let htmlBid = '';
+        let bidTot = 0;
+        bids.forEach(b => {
+            const p = parseFloat(b[0]), v = parseFloat(b[1]), usd = p*v;
+            bidTot += usd;
+            const w = Math.round((usd / maxBid) * 100);
+            htmlBid += `<div class="ob-row"><div class="ob-bg bg-green" style="width:${w}%"></div><span class="c-green">${fmtPrice(p)}</span><span>${v.toFixed(3)}</span><span>${fmtNum(bidTot)}</span></div>`;
+        });
+        $('obBids').innerHTML = htmlBid;
     }
 
     async function tick() {
@@ -97,34 +150,58 @@
             const data = await res.json();
             if (data.error) return;
 
-            $('vBid').innerText = '$' + Math.round(data.bidUSD).toLocaleString();
-            $('vAsk').innerText = '$' + Math.round(data.askUSD).toLocaleString();
-            $('curPair').innerText = symbol;
+            // Метрики
+            $('vBid').innerText = '$' + fmtNum(data.bidUSD);
+            $('vAsk').innerText = '$' + fmtNum(data.askUSD);
+            const imb = data.askUSD > 0 ? (data.bidUSD / data.askUSD) : 0;
+            $('vImb').innerText = imb.toFixed(2) + 'x';
+            $('vImb').style.color = imb > 1.2 ? 'var(--green)' : imb < 0.8 ? 'var(--red)' : 'white';
 
+            // Обновление графика
             const t = Math.floor(Date.now() / 1000);
             bidLine.update({ time: t, value: data.bidUSD });
             askLine.update({ time: t, value: data.askUSD });
-            candleSeries.update({ time: Math.floor(t/60)*60, open: data.price, high: data.price, low: data.price, close: data.price });
             
-            writeLog(`Updated ${symbol} - Price: ${data.price}`);
-        } catch(e) { writeLog("Update error: " + e.message); }
+            // Расчет свечи на лету зависит от таймфрейма
+            const coeff = tfSeconds[interval];
+            const candleTime = Math.floor(t / coeff) * coeff;
+            
+            // Если библиотека ругается на "time must be strictly increasing", оборачиваем в try
+            try {
+                candleSeries.update({ time: candleTime, open: data.price, high: data.price, low: data.price, close: data.price });
+            } catch(e) {}
+
+            renderOrderBook(data.book, data.price);
+            writeLog(`Обновлено: ${symbol} | Цена: $${data.price}`);
+        } catch(e) { writeLog("Ошибка соединения..."); }
     }
 
-    function openSearch() {
-        const p = prompt("Введите символ (например ETHUSDT):", symbol);
-        if (p) {
-            symbol = p.toUpperCase();
+    function changeSymbol() {
+        const val = $('symbolInput').value.toUpperCase();
+        if (val) {
+            symbol = val;
             candleSeries.setData([]); bidLine.setData([]); askLine.setData([]);
-            loadKlines(); loadHistory();
+            $('obAsks').innerHTML = ''; $('obBids').innerHTML = '';
+            loadKlines(); loadHistory(); tick();
         }
     }
 
-    // Start
+    // Обработка клика по таймфреймам
+    document.querySelectorAll('.tf-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+            e.target.classList.add('active');
+            interval = e.target.getAttribute('data-tf');
+            candleSeries.setData([]);
+            loadKlines();
+        });
+    });
+
     window.onload = () => {
         initChart();
         loadKlines();
         loadHistory();
-        setInterval(tick, 5000);
+        setInterval(tick, 3000); // Обновление каждые 3 секунды
         tick();
     };
 </script>

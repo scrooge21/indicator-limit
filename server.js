@@ -14,7 +14,6 @@ const BASE_URL = 'https://api.mexc.com';
 
 let cachedSymbols = [];
 
-// Подключение к БД
 if (process.env.MONGODB_URI) {
     mongoose.connect(process.env.MONGODB_URI)
         .then(() => console.log('✅ MongoDB Connected'))
@@ -27,7 +26,6 @@ const historySchema = new mongoose.Schema({
 });
 const History = mongoose.model('History', historySchema);
 
-// Фоновый сборщик (BTC, ETH, SOL)
 const HISTORY_PAIRS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
 async function backgroundLogger() {
     if (mongoose.connection.readyState !== 1) return;
@@ -42,9 +40,8 @@ async function backgroundLogger() {
         }
     } catch (e) {}
 }
-setInterval(backgroundLogger, 20000);
+setInterval(backgroundLogger, 15000);
 
-// API
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/symbols', async (req, res) => {
@@ -56,9 +53,11 @@ app.get('/api/symbols', async (req, res) => {
     } catch (e) { res.json(['BTCUSDT', 'ETHUSDT']); }
 });
 
+// ОБНОВЛЕНО: Добавлена поддержка interval
 app.get('/api/klines', async (req, res) => {
     try {
-        const r = await fetch(`${BASE_URL}/api/v3/klines?symbol=${req.query.symbol}&interval=1m&limit=100`);
+        const interval = req.query.interval || '1m';
+        const r = await fetch(`${BASE_URL}/api/v3/klines?symbol=${req.query.symbol}&interval=${interval}&limit=120`);
         const data = await r.json();
         res.json(data);
     } catch (e) { res.status(500).json([]); }
