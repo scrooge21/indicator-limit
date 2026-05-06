@@ -4,8 +4,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { config } from 'dotenv';
 import fetch from 'node-fetch';
-import mongoose from 'mongoose'; // Подключаем базу данных
+import mongoose from 'mongoose';
 
+// Загружаем переменные окружения
 config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -20,14 +21,14 @@ let cachedSymbols = [];
 const MONGO_URI = process.env.MONGODB_URI;
 
 if (!MONGO_URI) {
-  console.warn("⚠️ ВНИМАНИЕ: MONGODB_URI не найден в .env файле!");
+  console.warn("⚠️ ВНИМАНИЕ: MONGODB_URI не найден в переменных окружения!");
 } else {
   mongoose.connect(MONGO_URI)
     .then(() => console.log('✅ Успешно подключено к MongoDB'))
     .catch(err => console.error('❌ Ошибка подключения к MongoDB:', err));
 }
 
-// Создаем схему (таблицу) для сохранения истории
+// Схема для сохранения истории в базу данных
 const historySchema = new mongoose.Schema({
   timestamp: { type: Date, default: Date.now },
   symbol: String,
@@ -38,6 +39,9 @@ const historySchema = new mongoose.Schema({
 });
 
 const History = mongoose.model('History', historySchema);
+
+// Список пар, для которых сервер собирает историю 24/7 (можете менять)
+const HISTORY_PAIRS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'PEPEUSDT'];
 
 // ─── Утилиты ───────────────────────────────────────────────
 async function publicGet(path, params = {}) {
@@ -50,12 +54,16 @@ async function publicGet(path, params = {}) {
 async function loadSymbols() {
   try {
     const data = await publicGet('/api/v3/exchangeInfo');
+    // Берем только активные спотовые пары к USDT
     cachedSymbols = data.symbols
       .filter(s => s.status === 'ENABLED' && s.quoteAsset === 'USDT')
       .map(s => s.symbol);
-    console.log(`✅ Загружено ${cachedSymbols.length} торговых пар.`);
-  } catch (e) { console.error('Ошибка загрузки пар:', e.message); }
+    console.log(`✅ Загружено ${cachedSymbols.length} торговых пар с MEXC.`);
+  } catch (e) { 
+    console.error('Ошибка загрузки пар:', e.message); 
+  }
 }
+// Запускаем при старте сервера
 loadSymbols();
 
 // ─── Логика Индикатора ──────────────────────────────────────
@@ -78,60 +86,69 @@ function calcDepthImbalance(bids, asks, currentPrice, depthPct) {
 
 // ─── ФОНОВЫЙ СБОРЩИК В БАЗУ ДАННЫХ ──────────────────────────
 async function backgroundLogger() {
-  if (mongoose.connection.readyState !== 1) return; // Ждем подключения к БД
+  // Если БД еще не подключилась — пропускаем цикл
+  if (mongoose.connection.readyState !== 1) return; 
 
   try {
-    const symbol = 'BTCUSDT';
-    const depthPct = 5.0;
+    const depthPct = 5.0; // Собираем историю всегда на глубине 5%
 
-    const [book, priceData] = await Promise.all([
-      publicGet('/api/v3/depth', { symbol, limit: 1000 }),
-      publicGet('/api/v3/ticker/price', { symbol })
-    ]);
+    for (const symbol of HISTORY_PAIRS) {
+      const [book, priceData] = await Promise.all([
+        publicGet('/api/v3/depth', { symbol, limit: 1000 }),
+        publicGet('/api/v3/ticker/price', { symbol })
+      ]);
 
-    const price = parseFloat(priceData.price);
-    const depth = calcDepthImbalance(book.bids, book.asks, price, depthPct);
+      const price = parseFloat(priceData.price);
+      const depth = calcDepthImbalance(book.bids, book.asks, price, depthPct);
 
-    // Сохраняем в облачную базу данных
-    await History.create({
-      symbol: symbol,
-      price: price,
-      bidUSD: depth.bidVolUSD,
-      askUSD: depth.askVolUSD,
-      imbalance: depth.imbalance
-    });
+      // Сохраняем в MongoDB
+      await History.create({
+        symbol: symbol,
+        price: price,
+        bidUSD: depth.bidVolUSD,
+        askUSD: depth.askVolUSD,
+        imbalance: depth.imbalance
+      });
 
-    // Очистка старых данных (оставляем только последние 10,000 записей, чтобы не забить бесплатный лимит)
-    const count = await History.countDocuments({ symbol });
-    if (count > 10000) {
-      const oldest = await History.find({ symbol }).sort({ timestamp: 1 }).limit(count - 10000);
-      const idsToDelete = oldest.map(doc => doc._id);
-      await History.deleteMany({ _id: { $in: idsToDelete } });
+      // Очистка БД: оставляем только последние 5000 записей для КАЖДОЙ пары
+      // (чтобы не превысить бесплатный лимит в 512 МБ на MongoDB Atlas)
+      const count = await History.countDocuments({ symbol });
+      if (count > 5000) {
+        const oldest = await History.find({ symbol }).sort({ timestamp: 1 }).limit(count - 5000);
+        const idsToDelete = oldest.map(doc => doc._id);
+        await History.deleteMany({ _id: { $in: idsToDelete } });
+      }
     }
-
   } catch (err) {
     console.error('Ошибка логгера БД:', err.message);
   }
 }
-// Сохраняем историю каждые 10 секунд
-setInterval(backgroundLogger, 10000);
 
-// ─── Роуты Сервера ──────────────────────────────────────────
+// Запускаем сборщик каждые 15 секунд
+setInterval(backgroundLogger, 15000);
+
+
+// ─── Роуты Сервера (API) ────────────────────────────────────
+
+// Раздаем статические файлы (наш index.html)
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Отдает список всех пар для модального окна поиска
 app.get('/api/symbols', (req, res) => res.json(cachedSymbols));
 
-// Отдаем историю из базы данных
+// Отдает историю для графика из БД
 app.get('/api/history', async (req, res) => {
   try {
     if (mongoose.connection.readyState !== 1) return res.json([]);
     
-    // Берем последние 120 записей из базы
-    const records = await History.find({ symbol: 'BTCUSDT' })
-                                 .sort({ timestamp: -1 }) // Сначала свежие
-                                 .limit(120);
+    const symbol = req.query.symbol || 'BTCUSDT';
+
+    // Берем последние 200 записей для запрошенной пары
+    const records = await History.find({ symbol: symbol })
+                                 .sort({ timestamp: -1 }) 
+                                 .limit(200);
     
-    // Переворачиваем, чтобы на графике было слева-направо (от старых к новым)
+    // Переворачиваем, чтобы на графике было слева направо (от старых к новым)
     records.reverse();
 
     const history = records.map(r => ({
@@ -148,6 +165,7 @@ app.get('/api/history', async (req, res) => {
   }
 });
 
+// Отдает текущие данные стакана для основного индикатора
 app.get('/api/data', async (req, res) => {
   try {
     const symbol = req.query.symbol || 'BTCUSDT';
@@ -167,11 +185,13 @@ app.get('/api/data', async (req, res) => {
   }
 });
 
+// Отдает данные для сканера (массовый запрос нескольких пар)
 app.get('/api/scanner', async (req, res) => {
   try {
     const symbols = req.query.symbols ? req.query.symbols.split(',') : ['BTCUSDT'];
     const depthPct = parseFloat(req.query.depth) || 5.0; 
     
+    // Параллельно опрашиваем MEXC для каждой пары из сканера
     const promises = symbols.slice(0, 20).map(async (symbol) => {
       try {
         const [book, priceData] = await Promise.all([
@@ -181,7 +201,7 @@ app.get('/api/scanner', async (req, res) => {
         const price = parseFloat(priceData.price);
         const depth = calcDepthImbalance(book.bids, book.asks, price, depthPct);
         return { symbol, price, ...depth };
-      } catch (e) { return null; }
+      } catch (e) { return null; } // Пропускаем пару, если биржа выдала ошибку
     });
 
     const results = (await Promise.all(promises)).filter(r => r !== null);
@@ -191,6 +211,7 @@ app.get('/api/scanner', async (req, res) => {
   }
 });
 
+// ─── Запуск сервера ─────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`🚀 Сервер запущен: http://localhost:${PORT}`);
 });
