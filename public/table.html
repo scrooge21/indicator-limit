@@ -1,0 +1,358 @@
+!DOCTYPE html
+html lang=ru
+head
+    meta charset=UTF-8
+    titleMEXC SCANNERtitle
+    link rel=stylesheet href=style.css
+    style
+         ── Scanner-specific styles ── 
+        body { overflow auto; }
+
+        .sc-controls {
+            display flex; align-items center; gap 12px; flex-wrap wrap;
+        }
+        .sc-label { font-size 12px; color var(--text-muted); font-family var(--font-mono); }
+        .sc-input {
+            background var(--bg-main); border 1px solid var(--border);
+            color var(--text-main); padding 7px 10px; border-radius 4px;
+            font-family var(--font-mono); font-size 13px; width 70px; outline none;
+            text-align center;
+        }
+        .sc-inputfocus { border-color var(--accent); }
+
+        .depth-preset { display flex; gap 4px; }
+        .dp-btn {
+            background var(--bg-hover); border 1px solid var(--border);
+            color var(--text-muted); padding 7px 11px; border-radius 4px;
+            cursor pointer; font-family var(--font-mono); font-size 12px; transition 0.15s;
+        }
+        .dp-btnhover { color var(--text-main); border-color var(--text-muted); }
+        .dp-btn.active { background var(--accent); border-color var(--accent); color #fff; }
+
+        .sc-badge {
+            font-size 11px; font-family var(--font-mono); padding 4px 10px;
+            border-radius 12px; border 1px solid var(--border); color var(--text-muted);
+        }
+        .sc-badge.live { border-color var(--green); color var(--green); }
+
+        .limit-wrap { display flex; align-items center; gap 6px; }
+
+         Table 
+        .table-wrap {
+            flex 1; overflow-y auto; margin 0 16px 16px;
+            border 1px solid var(--border); border-radius 6px;
+        }
+        table { width 100%; border-collapse collapse; font-family var(--font-mono); font-size 13px; }
+        thead { position sticky; top 0; z-index 10; background var(--bg-panel); }
+        thead th {
+            padding 11px 16px; text-align right; color var(--text-muted);
+            font-size 11px; text-transform uppercase; letter-spacing 0.5px;
+            border-bottom 1px solid var(--border); cursor pointer; user-select none;
+            white-space nowrap; transition color 0.15s;
+        }
+        thead thhover { color var(--text-main); }
+        thead th.sort-ascafter  { content ' ↑'; color var(--accent); }
+        thead th.sort-descafter { content ' ↓'; color var(--accent); }
+        thead thfirst-child { text-align left; }
+
+        tbody tr {
+            border-bottom 1px solid rgba(34,38,51,0.6);
+            cursor pointer; transition background 0.1s;
+        }
+        tbody trhover { background var(--bg-hover); }
+        tbody trlast-child { border-bottom none; }
+        td { padding 9px 16px; text-align right; vertical-align middle; }
+        tdfirst-child { text-align left; }
+
+        .sym-cell { display flex; align-items center; gap 8px; }
+        .sym-rank { color var(--text-muted); font-size 11px; min-width 22px; }
+        .sym-name { font-weight 600; color var(--text-main); }
+        .sym-quote { color var(--text-muted); font-size 11px; }
+
+        .imb-bar-wrap { display flex; align-items center; gap 8px; justify-content flex-end; }
+        .imb-bar-bg {
+            width 80px; height 6px; background var(--bg-main);
+            border-radius 3px; overflow hidden; flex-shrink 0;
+        }
+        .imb-bar-fill { height 100%; border-radius 3px; transition width 0.3s; }
+        .imb-val { min-width 42px; text-align right; }
+
+        .vol-cell { color var(--text-muted); }
+
+         Progress overlay during scan 
+        .scan-overlay {
+            position fixed; inset 0; background rgba(11,14,20,0.85);
+            display flex; flex-direction column; align-items center; justify-content center;
+            z-index 100; gap 16px;
+        }
+        .scan-overlay.hidden { display none; }
+        .scan-spinner {
+            width 36px; height 36px; border 3px solid var(--border);
+            border-top-color var(--accent); border-radius 50%;
+            animation spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform rotate(360deg); } }
+        .scan-text { font-family var(--font-mono); font-size 13px; color var(--text-muted); }
+        .scan-progress { font-family var(--font-mono); font-size 22px; font-weight 700; color var(--text-main); }
+
+         Sidebar filter 
+        .filter-bar {
+            display flex; align-items center; gap 8px;
+            padding 0 16px 12px;
+        }
+        .filter-input {
+            background var(--bg-main); border 1px solid var(--border);
+            color var(--text-main); padding 7px 12px; border-radius 4px;
+            font-family var(--font-mono); font-size 13px; width 180px; outline none;
+        }
+        .filter-inputfocus { border-color var(--accent); }
+        .row-count { font-size 11px; color var(--text-muted); font-family var(--font-mono); margin-left auto; }
+    style
+head
+body
+
+div class=header
+    div style=displayflex; align-itemscenter; gap20px;
+        div class=logoMEXC spanPROspandiv
+        nav style=displayflex; gap4px;
+            a href= class=btn style=text-decorationnone;📈 Терминалa
+            a href=scanner.html class=btn active style=text-decorationnone;🔍 Сканерa
+        nav
+    div
+    div class=sc-controls
+        span class=sc-labelDepth %span
+        div class=depth-preset
+            button class=dp-btn data-d=11%button
+            button class=dp-btn active data-d=22%button
+            button class=dp-btn data-d=55%button
+            button class=dp-btn data-d=1010%button
+        div
+        input type=number id=depthInput class=sc-input value=2 min=0.1 max=20 step=0.1
+
+        div style=width1px;height20px;backgroundvar(--border);div
+        div class=limit-wrap
+            span class=sc-labelТопspan
+            input type=number id=limitInput class=sc-input value=100 min=10 max=200 step=10 style=width60px;
+            span class=sc-labelпарspan
+        div
+        button class=btn id=scanBtn onclick=runScan()▶ Сканироватьbutton
+        span class=sc-badge id=statusBadge—span
+    div
+div
+
+!-- Filter bar --
+div class=filter-bar style=margin-top12px;
+    input type=text id=filterInput class=filter-input placeholder=Фильтр по паре... oninput=applyFilter()
+    div style=displayflex;gap6px;
+        button class=dp-btn data-imb=all   onclick=setImbFilter('all',this)   style=font-size11px;Всеbutton
+        button class=dp-btn active data-imb=bull onclick=setImbFilter('bull',this)  style=font-size11px;border-colorvar(--green);colorvar(--green);Бид ↑button
+        button class=dp-btn data-imb=bear  onclick=setImbFilter('bear',this)  style=font-size11px;border-colorvar(--red);colorvar(--red);Аск ↑button
+    div
+    span class=row-count id=rowCountspan
+div
+
+!-- Table --
+div class=table-wrap
+    table id=scanTable
+        thead
+            tr
+                th onclick=sortBy('symbol')   id=th-symbolПараth
+                th onclick=sortBy('price')    id=th-priceЦенаth
+                th onclick=sortBy('change')   id=th-change24h %th
+                th onclick=sortBy('volume')   id=th-volumeОбъём 24hth
+                th onclick=sortBy('bidUSD')   id=th-bidUSDBID Лимитыth
+                th onclick=sortBy('askUSD')   id=th-askUSDASK Лимитыth
+                th onclick=sortBy('imbalance') id=th-imbalance class=sort-descДисбалансth
+            tr
+        thead
+        tbody id=scanBody
+            trtd colspan=7 style=text-aligncenter;padding60px;colorvar(--text-muted);font-familyvar(--font-mono);
+                Нажмите «Сканировать» для загрузки данных
+            tdtr
+        tbody
+    table
+div
+
+!-- Loading overlay --
+div class=scan-overlay id=overlay
+    div class=scan-spinnerdiv
+    div class=scan-progress id=overlayPct0%div
+    div class=scan-text id=overlayTextЗагрузка тикеров...div
+div
+
+script
+    let rawData = [];
+    let sortKey = 'imbalance';
+    let sortDir = -1;  -1 = desc, 1 = asc
+    let imbFilter = 'bull';
+
+    const $ = id = document.getElementById(id);
+
+    function fmtPrice(p) {
+        if (p = 1000) return p.toLocaleString('en-US', {maximumFractionDigits 2});
+        if (p = 1)    return p.toFixed(4);
+        if (p = 0.01) return p.toFixed(5);
+        return p.toFixed(8);
+    }
+    function fmtUSD(n) {
+        if (n = 1e9) return '$' + (n1e9).toFixed(2) + 'B';
+        if (n = 1e6) return '$' + (n1e6).toFixed(2) + 'M';
+        if (n = 1e3) return '$' + (n1e3).toFixed(1) + 'K';
+        return '$' + n.toFixed(0);
+    }
+
+    function setImbFilter(val, btn) {
+        imbFilter = val;
+        document.querySelectorAll('[data-imb]').forEach(b = b.classList.remove('active'));
+        btn.classList.add('active');
+        renderTable();
+    }
+
+    function sortBy(key) {
+        if (sortKey === key) { sortDir = -1; }
+        else { sortKey = key; sortDir = key === 'symbol'  1  -1; }
+        document.querySelectorAll('thead th').forEach(th = {
+            th.classList.remove('sort-asc','sort-desc');
+        });
+        $('th-' + key).classList.add(sortDir === 1  'sort-asc'  'sort-desc');
+        renderTable();
+    }
+
+    function applyFilter() { renderTable(); }
+
+    function renderTable() {
+        const q = $('filterInput').value.toUpperCase().trim();
+        let rows = rawData.filter(d = {
+            if (q && !d.symbol.includes(q)) return false;
+            if (imbFilter === 'bull' && d.imbalance = 1) return false;
+            if (imbFilter === 'bear' && d.imbalance = 1) return false;
+            return true;
+        });
+
+        rows.sort((a, b) = {
+            const av = a[sortKey], bv = b[sortKey];
+            if (typeof av === 'string') return sortDir  av.localeCompare(bv);
+            return sortDir  (bv - av);
+        });
+
+        $('rowCount').textContent = `${rows.length} пар`;
+
+         Max values for bar scaling
+        const maxBid = Math.max(...rows.map(r = r.bidUSD), 1);
+        const maxAsk = Math.max(...rows.map(r = r.askUSD), 1);
+        const maxImb = Math.max(...rows.map(r = r.imbalance), 2);
+
+        let html = '';
+        rows.forEach((d, i) = {
+            const base = d.symbol.replace(USDT$, '');
+            const chg = d.change;
+            const chgCls = chg  0  'c-green'  chg  0  'c-red'  '';
+            const chgStr = (chg  0  '+'  '') + chg.toFixed(2) + '%';
+
+             Imbalance bar center = 1x, green = bid  ask, red = ask  bid
+            const imb = d.imbalance;
+            const imbColor = imb  1.15  'var(--green)'  imb  0.85  'var(--red)'  '#94a3b8';
+            const imbPct = Math.min((imb  maxImb)  100, 100);
+            const imbStr = imb.toFixed(3) + 'x';
+
+            const bidPct = Math.round((d.bidUSD  maxBid)  100);
+            const askPct = Math.round((d.askUSD  maxAsk)  100);
+
+            html += `tr onclick=openPair('${d.symbol}')
+                tddiv class=sym-cell
+                    span class=sym-rank${i+1}span
+                    span class=sym-name${base}spanspan class=sym-quoteUSDTspan
+                divtd
+                td${fmtPrice(d.price)}td
+                td class=${chgCls}${chgStr}td
+                td class=vol-cell${fmtUSD(d.volume)}td
+                td
+                    div class=imb-bar-wrap
+                        div class=imb-bar-bgdiv class=imb-bar-fill style=width${bidPct}%;backgroundvar(--green);divdiv
+                        span class=c-green${fmtUSD(d.bidUSD)}span
+                    div
+                td
+                td
+                    div class=imb-bar-wrap
+                        div class=imb-bar-bgdiv class=imb-bar-fill style=width${askPct}%;backgroundvar(--red);divdiv
+                        span class=c-red${fmtUSD(d.askUSD)}span
+                    div
+                td
+                td
+                    div class=imb-bar-wrap
+                        div class=imb-bar-bgdiv class=imb-bar-fill style=width${imbPct}%;background${imbColor};divdiv
+                        span class=imb-val style=color${imbColor};font-weight600;${imbStr}span
+                    div
+                td
+            tr`;
+        });
+
+        $('scanBody').innerHTML = html  `trtd colspan=7 style=text-aligncenter;padding40px;colorvar(--text-muted);Нет пар по фильтруtdtr`;
+    }
+
+    function openPair(sym) {
+        window.location.href = `symbol=${sym}`;
+    }
+
+    async function runScan() {
+        const depth = parseFloat($('depthInput').value)  2;
+        const limit = parseInt($('limitInput').value)  100;
+
+        $('scanBtn').disabled = true;
+        $('overlay').classList.remove('hidden');
+        $('overlayPct').textContent = '0%';
+        $('overlayText').textContent = 'Загрузка тикеров и стаканов...';
+        $('statusBadge').textContent = '⏳ Сканирование...';
+        $('statusBadge').className = 'sc-badge';
+
+         Simulate progress while waiting
+        let fakeProgress = 0;
+        const progressInterval = setInterval(() = {
+            fakeProgress = Math.min(fakeProgress + Math.random()  6, 90);
+            $('overlayPct').textContent = Math.round(fakeProgress) + '%';
+            $('overlayText').textContent = `Обрабатываем стаканы... (~${Math.round(fakeProgress)}%)`;
+        }, 400);
+
+        try {
+            const t0 = Date.now();
+            const res = await fetch(`apiscandepth=${depth}&limit=${limit}`);
+            rawData = await res.json();
+            const elapsed = ((Date.now() - t0)  1000).toFixed(1);
+
+            clearInterval(progressInterval);
+            $('overlayPct').textContent = '100%';
+
+            setTimeout(() = {
+                $('overlay').classList.add('hidden');
+                $('scanBtn').disabled = false;
+                $('statusBadge').textContent = `✓ ${rawData.length} пар · ${elapsed}s · depth ${depth}%`;
+                $('statusBadge').className = 'sc-badge live';
+                renderTable();
+            }, 300);
+
+        } catch(e) {
+            clearInterval(progressInterval);
+            $('overlay').classList.add('hidden');
+            $('scanBtn').disabled = false;
+            $('statusBadge').textContent = '✗ Ошибка соединения';
+            $('statusBadge').className = 'sc-badge';
+        }
+    }
+
+     Depth preset buttons
+    document.querySelectorAll('.dp-btn[data-d]').forEach(btn = {
+        btn.addEventListener('click', () = {
+            document.querySelectorAll('.dp-btn[data-d]').forEach(b = b.classList.remove('active'));
+            btn.classList.add('active');
+            $('depthInput').value = btn.dataset.d;
+        });
+    });
+    $('depthInput').addEventListener('input', () = {
+        document.querySelectorAll('.dp-btn[data-d]').forEach(b = b.classList.remove('active'));
+    });
+
+     Auto-run on load
+    window.onload = () = runScan();
+script
+body
+html
