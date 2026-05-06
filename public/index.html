@@ -10,7 +10,13 @@
 <body>
 
 <div class="header">
-    <div class="logo">MEXC <span>PRO</span></div>
+    <div style="display:flex; align-items:center; gap:20px;">
+        <div class="logo">MEXC <span>PRO</span></div>
+        <nav style="display:flex; gap:4px;">
+            <a href="/" class="btn active" style="text-decoration:none;">📈 Терминал</a>
+            <a href="/scanner.html" class="btn" style="text-decoration:none;">🔍 Сканер</a>
+        </nav>
+    </div>
     <div class="toolbar">
         <div class="search-wrap">
             <input type="text" id="symbolInput" class="search-input" value="BTCUSDT" placeholder="Поиск пары..." autocomplete="off">
@@ -22,6 +28,7 @@
         <button class="btn tf-btn" data-tf="5m">5m</button>
         <button class="btn tf-btn" data-tf="15m">15m</button>
         <button class="btn tf-btn" data-tf="60m">1H</button>
+    </div>
     </div>
 </div>
 
@@ -64,7 +71,8 @@
 </div>
 
 <script>
-    let symbol = 'BTCUSDT';
+    const urlParams = new URLSearchParams(window.location.search);
+    let symbol = urlParams.get('symbol') || 'BTCUSDT';
     let interval = '1m';
     let allSymbols = [];
     
@@ -262,6 +270,7 @@
     });
 
     window.onload = () => {
+        $('symbolInput').value = symbol;
         initChart();
         loadSymbols();
         loadKlines();
