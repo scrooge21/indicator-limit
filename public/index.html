@@ -22,6 +22,7 @@
             <div class="search-dropdown" id="searchDropdown"></div>
         </div>
         <div style="width: 1px; height: 20px; background: var(--border); margin: 0 10px;"></div>
+        <!-- Кнопки таймфреймов -->
         <button class="btn tf-btn active" data-tf="1m">1m</button>
         <button class="btn tf-btn" data-tf="5m">5m</button>
         <button class="btn tf-btn" data-tf="15m">15m</button>
@@ -30,13 +31,11 @@
 </div>
 
 <div class="main-grid">
-    <!-- Левая колонка: Графики и Данные -->
     <div class="left-col">
-
-        <!-- Основной свечной график -->
+        <!-- Основной график -->
         <div class="chart-container" id="chart"></div>
 
-        <!-- Разделитель с заголовком индикатора -->
+        <!-- Заголовок индикатора -->
         <div class="indicator-header">
             <span class="ind-title">BID/ASK SPOT TOTAL</span>
             <div class="ind-legend">
@@ -46,7 +45,7 @@
             </div>
         </div>
 
-        <!-- Панель индикатора BID/ASK -->
+        <!-- График индикатора -->
         <div class="indicator-container" id="indicatorChart"></div>
 
         <!-- Метрики -->
@@ -68,7 +67,7 @@
         <div id="log">System initializing...</div>
     </div>
 
-    <!-- Правая колонка: Стакан -->
+    <!-- Стакан -->
     <div class="right-col">
         <div class="ob-header">Order Book (Depth 5%)</div>
         <div class="ob-table-head">
@@ -90,11 +89,16 @@
     let interval = '1m';
     let allSymbols = [];
 
+    // Множители секунд для агрегации данных индикатора
     const tfSeconds = { '1m': 60, '5m': 300, '15m': 900, '60m': 3600 };
 
     let chart, candleSeries;
     let indicatorChart, bidLine, askLine;
     let syncingMain = false, syncingInd = false;
+
+    // Глобальные переменные для сохранения состояния текущей свечи/точки
+    let currentCandle = null;
+    let currentIndBucket = null;
 
     const $ = id => document.getElementById(id);
 
@@ -103,7 +107,7 @@
     function fmtNum(n) { return n >= 1e9 ? (n/1e9).toFixed(2)+'B' : n >= 1e6 ? (n/1e6).toFixed(2)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'K' : n.toFixed(1); }
     function fmtLeg(n) { return '$' + fmtNum(n); }
 
-    // ── Search autocomplete ───────────────────────────────────────────────
+    // ── Autocomplete поиска ───────────────────────────────────────────────
     async function loadSymbols() {
         try {
             const res = await fetch('/api/symbols');
@@ -131,6 +135,8 @@
         $('symbolInput').value = sym;
         $('searchDropdown').style.display = 'none';
         symbol = sym;
+        currentCandle = null;
+        currentIndBucket = null;
         candleSeries.setData([]);
         bidLine.setData([]);
         askLine.setData([]);
@@ -147,39 +153,16 @@
         inp.addEventListener('input', () => showDropdown(inp.value));
         inp.addEventListener('focus', () => showDropdown(inp.value));
         inp.addEventListener('blur', () => setTimeout(() => { $('searchDropdown').style.display = 'none'; }, 150));
-        inp.addEventListener('keydown', (e) => {
-            const dd = $('searchDropdown');
-            const items = dd.querySelectorAll('.dd-item');
-            const active = dd.querySelector('.dd-item.hovered');
-            if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                const next = active ? (active.nextElementSibling || items[0]) : items[0];
-                if (active) active.classList.remove('hovered');
-                if (next) { next.classList.add('hovered'); inp.value = next.dataset.symbol; }
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                const prev = active ? (active.previousElementSibling || items[items.length-1]) : items[items.length-1];
-                if (active) active.classList.remove('hovered');
-                if (prev) { prev.classList.add('hovered'); inp.value = prev.dataset.symbol; }
-            } else if (e.key === 'Enter') {
-                e.preventDefault();
-                const sym = (active ? active.dataset.symbol : inp.value.toUpperCase().trim());
-                if (sym) selectSymbol(sym);
-            } else if (e.key === 'Escape') {
-                dd.style.display = 'none';
-            }
-        });
     });
 
-    // ── Chart Init ────────────────────────────────────────────────────────
+    // ── Инициализация графиков ────────────────────────────────────────────────
     function initChart() {
-        // --- Основной свечной график ---
         const container = $('chart');
         chart = LightweightCharts.createChart(container, {
             layout: { background: { color: '#0b0e14' }, textColor: '#64748b' },
             grid: { vertLines: { color: '#151822' }, horzLines: { color: '#151822' } },
             rightPriceScale: { borderColor: '#222633' },
-            timeScale: { borderColor: '#222633', timeVisible: true, visible: false }, // скрываем ось времени у основного
+            timeScale: { borderColor: '#222633', timeVisible: true, visible: false }, 
             crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
         });
 
@@ -189,7 +172,6 @@
             borderVisible: false
         });
 
-        // --- Индикаторный график BID/ASK ---
         const indContainer = $('indicatorChart');
         indicatorChart = LightweightCharts.createChart(indContainer, {
             layout: { background: { color: '#0b0e14' }, textColor: '#64748b' },
@@ -199,25 +181,10 @@
             crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
         });
 
-        // Зелёная линия — BID
-        bidLine = indicatorChart.addLineSeries({
-            color: '#00E592',
-            lineWidth: 2,
-            lastValueVisible: true,
-            priceLineVisible: false,
-            title: 'BID',
-        });
+        bidLine = indicatorChart.addLineSeries({ color: '#00E592', lineWidth: 2, priceLineVisible: false, title: 'BID' });
+        askLine = indicatorChart.addLineSeries({ color: '#F59E0B', lineWidth: 2, priceLineVisible: false, title: 'ASK' });
 
-        // Оранжевая линия — ASK
-        askLine = indicatorChart.addLineSeries({
-            color: '#F59E0B',
-            lineWidth: 2,
-            lastValueVisible: true,
-            priceLineVisible: false,
-            title: 'ASK',
-        });
-
-        // --- Синхронизация таймскейлов ---
+        // Синхронизация масштабирования
         chart.timeScale().subscribeVisibleLogicalRangeChange(range => {
             if (syncingMain) return;
             syncingInd = true;
@@ -231,7 +198,7 @@
             syncingMain = false;
         });
 
-        // Синхронизация crosshair
+        // Синхронизация курсора
         chart.subscribeCrosshairMove(param => {
             if (!param.time) return;
             indicatorChart.setCrosshairPosition(0, param.time, bidLine);
@@ -241,46 +208,69 @@
             chart.setCrosshairPosition(0, param.time, candleSeries);
         });
 
-        // Resize
         window.addEventListener('resize', () => {
             chart.resize(container.clientWidth, container.clientHeight);
             indicatorChart.resize(indContainer.clientWidth, indContainer.clientHeight);
         });
     }
 
-    // ── Data Loading ──────────────────────────────────────────────────────
+    // ── Загрузка данных ──────────────────────────────────────────────────
     async function loadKlines() {
         try {
             writeLog(`Загрузка свечей ${interval}...`);
             const res = await fetch(`/api/klines?symbol=${symbol}&interval=${interval}`);
             const data = await res.json();
-            candleSeries.setData(data.map(d => ({
-                time: d[0]/1000,
-                open: parseFloat(d[1]),
-                high: parseFloat(d[2]),
-                low: parseFloat(d[3]),
-                close: parseFloat(d[4])
-            })));
+            const parsed = data.map(d => ({
+                time: Math.floor(d[0]/1000),
+                open: parseFloat(d[1]), high: parseFloat(d[2]),
+                low: parseFloat(d[3]), close: parseFloat(d[4])
+            }));
+            candleSeries.setData(parsed);
+            
+            // Сохраняем последнюю свечу для корректного обновления
+            if (parsed.length > 0) currentCandle = parsed[parsed.length - 1];
+            
             chart.timeScale().fitContent();
         } catch(e) { writeLog("Ошибка загрузки свечей."); }
     }
 
     async function loadHistory() {
         try {
-            const res = await fetch(`/api/history?symbol=${symbol}`);
+            const res = await fetch(`/api/history?symbol=${symbol}&limit=1000`);
             const data = await res.json();
             if (data.length > 0) {
-                bidLine.setData(data.map(d => ({
-                    time: Math.floor(new Date(d.timestamp).getTime() / 1000),
-                    value: d.bidUSD
-                })));
-                askLine.setData(data.map(d => ({
-                    time: Math.floor(new Date(d.timestamp).getTime() / 1000),
-                    value: d.askUSD
-                })));
+                const coeff = tfSeconds[interval];
+                const bidData = [];
+                const askData = [];
+                let bucket = null;
+
+                // Агрегация индикатора под выбранный таймфрейм
+                data.forEach(row => {
+                    const t = Math.floor(new Date(row.time).getTime() / 1000);
+                    const bucketTime = Math.floor(t / coeff) * coeff;
+
+                    if (!bucket || bucket.time !== bucketTime) {
+                        if (bucket) {
+                            bidData.push({ time: bucket.time, value: bucket.bid });
+                            askData.push({ time: bucket.time, value: bucket.ask });
+                        }
+                        bucket = { time: bucketTime, bid: row.bidUSD, ask: row.askUSD };
+                    } else {
+                        bucket.bid = row.bidUSD;
+                        bucket.ask = row.askUSD;
+                    }
+                });
+
+                if (bucket) {
+                    bidData.push({ time: bucket.time, value: bucket.bid });
+                    askData.push({ time: bucket.time, value: bucket.ask });
+                    currentIndBucket = bucket; // Сохраняем последний бар индикатора
+                }
+
+                bidLine.setData(bidData);
+                askLine.setData(askData);
                 indicatorChart.timeScale().fitContent();
 
-                // Обновляем легенду последними значениями
                 const last = data[data.length - 1];
                 updateLegend(last.bidUSD, last.askUSD);
             }
@@ -295,7 +285,7 @@
         $('legDiff').textContent = 'DIFF — ' + (diff >= 0 ? '+' : '') + fmtLeg(diff);
     }
 
-    // ── Order Book ────────────────────────────────────────────────────────
+    // ── Отрисовка стакана ────────────────────────────────────────────────
     function renderOrderBook(book, currentPrice) {
         $('obMidPrice').innerText = fmtPrice(currentPrice);
 
@@ -322,54 +312,74 @@
         $('obBids').innerHTML = htmlBid;
     }
 
-    // ── Tick (live update) ────────────────────────────────────────────────
+    // ── Живое обновление (Tick) ──────────────────────────────────────────
     async function tick() {
         try {
             const res = await fetch(`/api/data?symbol=${symbol}&depth=5`);
             const data = await res.json();
             if (data.error) return;
 
-            // Метрики
             $('vBid').innerText = '$' + fmtNum(data.bidUSD);
             $('vAsk').innerText = '$' + fmtNum(data.askUSD);
             const imb = data.askUSD > 0 ? (data.bidUSD / data.askUSD) : 0;
             $('vImb').innerText = imb.toFixed(2) + 'x';
             $('vImb').style.color = imb > 1.2 ? 'var(--green)' : imb < 0.8 ? 'var(--red)' : 'white';
 
-            // Обновляем легенду индикатора
             updateLegend(data.bidUSD, data.askUSD);
+            renderOrderBook(data.book, data.price);
 
-            // Обновляем свечу
+            // === КОРРЕКТНОЕ ОБНОВЛЕНИЕ СВЕЧИ И ЛИНИЙ ===
             const t = Math.floor(Date.now() / 1000);
             const coeff = tfSeconds[interval];
-            const candleTime = Math.floor(t / coeff) * coeff;
-            try {
-                candleSeries.update({ time: candleTime, open: data.price, high: data.price, low: data.price, close: data.price });
-            } catch(e) {}
+            const alignedTime = Math.floor(t / coeff) * coeff; // Выравниваем время по таймфрейму
 
-            // Обновляем индикатор BID/ASK
-            try {
-                bidLine.update({ time: t, value: data.bidUSD });
-                askLine.update({ time: t, value: data.askUSD });
-            } catch(e) {}
+            // Обновляем СВЕЧУ
+            if (!currentCandle || currentCandle.time !== alignedTime) {
+                currentCandle = { time: alignedTime, open: data.price, high: data.price, low: data.price, close: data.price };
+            } else {
+                currentCandle.high = Math.max(currentCandle.high, data.price);
+                currentCandle.low = Math.min(currentCandle.low, data.price);
+                currentCandle.close = data.price;
+            }
+            try { candleSeries.update(currentCandle); } catch(e){}
 
-            renderOrderBook(data.book, data.price);
-            writeLog(`Обновлено: ${symbol} | Цена: $${fmtPrice(data.price)} | BID: ${fmtLeg(data.bidUSD)} | ASK: ${fmtLeg(data.askUSD)}`);
-        } catch(e) { writeLog("Ошибка соединения..."); }
+            // Обновляем ИНДИКАТОР (в тот же alignedTime)
+            if (!currentIndBucket || currentIndBucket.time !== alignedTime) {
+                currentIndBucket = { time: alignedTime, bid: data.bidUSD, ask: data.askUSD };
+            } else {
+                currentIndBucket.bid = data.bidUSD;
+                currentIndBucket.ask = data.askUSD;
+            }
+            try {
+                bidLine.update({ time: alignedTime, value: currentIndBucket.bid });
+                askLine.update({ time: alignedTime, value: currentIndBucket.ask });
+            } catch(e){}
+
+            writeLog(`Обновлено: ${symbol} | Цена: $${fmtPrice(data.price)}`);
+        } catch(e) {}
     }
 
-    // ── Timeframe buttons ─────────────────────────────────────────────────
+    // ── Переключение таймфреймов ──────────────────────────────────────────
     document.querySelectorAll('.tf-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
             e.target.classList.add('active');
+            
             interval = e.target.getAttribute('data-tf');
+            
+            // Очищаем графики и сбрасываем локальное состояние
+            currentCandle = null;
+            currentIndBucket = null;
             candleSeries.setData([]);
+            bidLine.setData([]);
+            askLine.setData([]);
+
+            // Загружаем заново с учетом нового таймфрейма
             loadKlines();
+            loadHistory();
         });
     });
 
-    // ── Init ──────────────────────────────────────────────────────────────
     window.onload = () => {
         $('symbolInput').value = symbol;
         initChart();
