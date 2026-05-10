@@ -519,21 +519,26 @@ async function loadKlines() {
 
 async function loadHistory() {
     try {
-        const res  = await fetch(`/api/history?symbol=${symbol}`);
+        const res  = await fetch(`/api/history?symbol=${symbol}&limit=1000`);
         const data = await res.json();
 
         if (data.length > 0) {
-            // Remove duplicate timestamps before setData
-            const seen = new Set();
-            const bidData = [], askData = [];
+            // Aggregate raw DB points (saved every ~3-15s) into tfSec-sized buckets,
+            // matching the candlestick timeframe exactly.
+            // Each bucket gets the LAST bidUSD/askUSD value in that interval.
+            const buckets = new Map(); // bucketTime → { bidUSD, askUSD }
             data.forEach(d => {
-                const t = Math.floor(new Date(d.timestamp).getTime() / 1000);
-                if (!seen.has(t)) {
-                    seen.add(t);
-                    bidData.push({ time: t, value: d.bidUSD });
-                    askData.push({ time: t, value: d.askUSD });
-                }
+                const rawSec    = Math.floor(new Date(d.timestamp).getTime() / 1000);
+                const bucketTime = Math.floor(rawSec / tfSec) * tfSec;
+                // Always overwrite so bucket ends up with the last (most recent) value
+                buckets.set(bucketTime, { bidUSD: d.bidUSD, askUSD: d.askUSD });
             });
+
+            // Sort by time and build series arrays
+            const sorted  = [...buckets.entries()].sort((a, b) => a[0] - b[0]);
+            const bidData = sorted.map(([t, v]) => ({ time: t, value: v.bidUSD }));
+            const askData = sorted.map(([t, v]) => ({ time: t, value: v.askUSD }));
+
             bidLine.setData(bidData);
             askLine.setData(askData);
             indicatorChart.timeScale().fitContent();
@@ -651,10 +656,10 @@ async function tick() {
             } catch(e) {}
         }
 
-        // ── Indicator live update ──
+        // ── Indicator live update — use candleTime so the point aligns with the current candle ──
         try {
-            bidLine.update({ time: now, value: data.bidUSD });
-            askLine.update({ time: now, value: data.askUSD });
+            bidLine.update({ time: candleTime, value: data.bidUSD });
+            askLine.update({ time: candleTime, value: data.askUSD });
         } catch(e) {}
 
         // ── Order book ──
@@ -678,7 +683,10 @@ document.querySelectorAll('.tf-btn').forEach(btn => {
         currentCandle = null;
         candleSeries.setData([]);
         volumeSeries.setData([]);
+        bidLine.setData([]);
+        askLine.setData([]);
         loadKlines();
+        loadHistory();   // re-aggregate history into the new tfSec buckets
     });
 });
 
