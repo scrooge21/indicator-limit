@@ -5,37 +5,137 @@
     <title>MEXC PRO TERMINAL</title>
     <link rel="stylesheet" href="/style.css">
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        /* ── OHLCV overlay: override chart-container > div rule ── */
+        #ohlcvBar {
+            width: auto !important;
+            height: auto !important;
+            position: absolute;
+            top: 10px;
+            left: 14px;
+            z-index: 10;
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            pointer-events: none;
+            user-select: none;
+            flex-wrap: wrap;
+        }
+        #ohlcvBar span {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        #ohlcvBar span b {
+            font-weight: 600;
+        }
+
+        /* ── Price header ── */
+        #priceHeader {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-family: var(--font-mono);
+        }
+        #hPrice {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-main);
+            letter-spacing: 0.5px;
+        }
+        #hChange {
+            font-size: 13px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        #hChange.up   { background: rgba(0,229,146,0.12); color: var(--green); }
+        #hChange.down { background: rgba(255,73,118,0.12); color: var(--red);   }
+
+        /* ── Extra timeframe buttons ── */
+        .tf-sep {
+            width: 1px;
+            height: 16px;
+            background: var(--border);
+        }
+
+        /* ── Chart container tweak so overlay works ── */
+        .chart-container {
+            position: relative; /* already set in style.css, but be explicit */
+        }
+        #chartInner {
+            position: absolute;
+            inset: 0;
+        }
+
+        /* ── Volume color crosshair ── */
+        .ob-mid { transition: color 0.2s; }
+
+        /* ── Watermark override (hidden by default — LW handles it) ── */
+    </style>
 </head>
 <body>
 
+<!-- ────────────────────────── Header ────────────────────────── -->
 <div class="header">
     <div style="display:flex; align-items:center; gap:20px;">
         <div class="logo">MEXC <span>PRO</span></div>
         <nav style="display:flex; gap:4px;">
-            <a href="/" class="btn active" style="text-decoration:none;">📈 Терминал</a>
-            <a href="/scanner.html" class="btn" style="text-decoration:none;">🔍 Сканер</a>
+            <a href="/"           class="btn active" style="text-decoration:none;">📈 Терминал</a>
+            <a href="/scanner.html" class="btn"       style="text-decoration:none;">🔍 Сканер</a>
         </nav>
     </div>
+
+    <!-- Live price display -->
+    <div id="priceHeader">
+        <span id="hPrice">—</span>
+        <span id="hChange" class="up">—</span>
+        <span id="hHigh"  style="font-family:var(--font-mono); font-size:12px; color:var(--text-muted);">H: —</span>
+        <span id="hLow"   style="font-family:var(--font-mono); font-size:12px; color:var(--text-muted);">L: —</span>
+    </div>
+
     <div class="toolbar">
         <div class="search-wrap">
-            <input type="text" id="symbolInput" class="search-input" value="BTCUSDT" placeholder="Поиск пары..." autocomplete="off">
+            <input type="text" id="symbolInput" class="search-input"
+                   value="BTCUSDT" placeholder="Поиск пары..." autocomplete="off">
             <div class="search-dropdown" id="searchDropdown"></div>
         </div>
-        <div style="width: 1px; height: 20px; background: var(--border); margin: 0 10px;"></div>
-        <!-- Кнопки таймфреймов -->
-        <button class="btn tf-btn active" data-tf="1m">1m</button>
-        <button class="btn tf-btn" data-tf="5m">5m</button>
-        <button class="btn tf-btn" data-tf="15m">15m</button>
-        <button class="btn tf-btn" data-tf="60m">1H</button>
+        <div style="width:1px;height:20px;background:var(--border);margin:0 10px;"></div>
+
+        <!-- Timeframe buttons -->
+        <button class="btn tf-btn active" data-tf="1m"  data-sec="60">1m</button>
+        <button class="btn tf-btn"        data-tf="5m"  data-sec="300">5m</button>
+        <button class="btn tf-btn"        data-tf="15m" data-sec="900">15m</button>
+        <button class="btn tf-btn"        data-tf="60m" data-sec="3600">1H</button>
+        <div class="tf-sep"></div>
+        <button class="btn tf-btn"        data-tf="4h"  data-sec="14400">4H</button>
+        <button class="btn tf-btn"        data-tf="1d"  data-sec="86400">1D</button>
     </div>
 </div>
 
+<!-- ────────────────────────── Main grid ────────────────────────── -->
 <div class="main-grid">
-    <div class="left-col">
-        <!-- Основной график -->
-        <div class="chart-container" id="chart"></div>
 
-        <!-- Заголовок индикатора -->
+    <!-- Left column -->
+    <div class="left-col">
+
+        <!-- ── Candlestick chart + OHLCV overlay ── -->
+        <div class="chart-container">
+            <!-- OHLCV info bar (top-left overlay, TradingView-style) -->
+            <div id="ohlcvBar">
+                <span id="oSym" style="color:var(--text-main); font-weight:700; font-size:13px;"></span>
+                <span>O:&nbsp;<b id="oO" style="color:var(--text-main)">—</b></span>
+                <span>H:&nbsp;<b id="oH" style="color:var(--green)">—</b></span>
+                <span>L:&nbsp;<b id="oL" style="color:var(--red)">—</b></span>
+                <span>C:&nbsp;<b id="oC">—</b></span>
+                <span>V:&nbsp;<b id="oVol" style="color:#94a3b8">—</b></span>
+                <span id="oPct" style="font-size:11px; padding:2px 6px; border-radius:3px;"></span>
+            </div>
+            <!-- Chart fills container -->
+            <div id="chartInner"></div>
+        </div>
+
+        <!-- ── BID/ASK indicator header ── -->
         <div class="indicator-header">
             <span class="ind-title">BID/ASK SPOT TOTAL</span>
             <div class="ind-legend">
@@ -45,10 +145,10 @@
             </div>
         </div>
 
-        <!-- График индикатора -->
+        <!-- ── BID/ASK indicator chart ── -->
         <div class="indicator-container" id="indicatorChart"></div>
 
-        <!-- Метрики -->
+        <!-- ── Metrics bar ── -->
         <div class="metrics-bar">
             <div class="metric-box">
                 <div class="m-title">BID LIMITS (USD)</div>
@@ -67,7 +167,7 @@
         <div id="log">System initializing...</div>
     </div>
 
-    <!-- Стакан -->
+    <!-- ── Right column: Order Book ── -->
     <div class="right-col">
         <div class="ob-header">Order Book (Depth 5%)</div>
         <div class="ob-table-head">
@@ -77,318 +177,522 @@
         </div>
         <div class="ob-list">
             <div class="ob-asks" id="obAsks"></div>
-            <div class="ob-mid" id="obMidPrice">0.00</div>
+            <div class="ob-mid"  id="obMidPrice">0.00</div>
             <div class="ob-bids" id="obBids"></div>
         </div>
     </div>
 </div>
 
+<!-- ════════════════════════ JavaScript ════════════════════════ -->
 <script>
-    const urlParams = new URLSearchParams(window.location.search);
-    let symbol = urlParams.get('symbol') || 'BTCUSDT';
-    let interval = '1m';
-    let allSymbols = [];
+// ── State ────────────────────────────────────────────────────────────────
+const urlParams = new URLSearchParams(window.location.search);
+let symbol      = urlParams.get('symbol') || 'BTCUSDT';
+let interval    = '1m';
+let tfSec       = 60;
+let allSymbols  = [];
 
-    // Множители секунд для агрегации данных индикатора
-    const tfSeconds = { '1m': 60, '5m': 300, '15m': 900, '60m': 3600 };
+let chart, candleSeries, volumeSeries;
+let indicatorChart, bidLine, askLine;
+let syncingMain = false, syncingInd = false;
 
-    let chart, candleSeries;
-    let indicatorChart, bidLine, askLine;
-    let syncingMain = false, syncingInd = false;
+// Tracks the live candle state so update() preserves open/high/low
+let currentCandle = null;  // { time, open, high, low, close, volume }
 
-    // Глобальные переменные для сохранения состояния текущей свечи/точки
-    let currentCandle = null;
-    let currentIndBucket = null;
+const $ = id => document.getElementById(id);
 
-    const $ = id => document.getElementById(id);
+// ── Helpers ───────────────────────────────────────────────────────────────
+function writeLog(m) {
+    $('log').innerText = `[${new Date().toLocaleTimeString()}] ${m}`;
+}
 
-    function writeLog(m) { $('log').innerText = `[${new Date().toLocaleTimeString()}] ${m}`; }
-    function fmtPrice(p) { return p > 1000 ? p.toLocaleString('en-US') : p.toFixed(4); }
-    function fmtNum(n) { return n >= 1e9 ? (n/1e9).toFixed(2)+'B' : n >= 1e6 ? (n/1e6).toFixed(2)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'K' : n.toFixed(1); }
-    function fmtLeg(n) { return '$' + fmtNum(n); }
+function fmtPrice(p) {
+    if (!p && p !== 0) return '—';
+    if (p >= 10000)  return p.toLocaleString('en-US', { maximumFractionDigits: 2 });
+    if (p >= 1)      return p.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+    if (p >= 0.01)   return p.toFixed(5);
+    return p.toFixed(8);
+}
 
-    // ── Autocomplete поиска ───────────────────────────────────────────────
-    async function loadSymbols() {
-        try {
-            const res = await fetch('/api/symbols');
-            allSymbols = await res.json();
-        } catch(e) { allSymbols = ['BTCUSDT','ETHUSDT','SOLUSDT']; }
+function fmtNum(n) {
+    if (n >= 1e9) return (n/1e9).toFixed(2)+'B';
+    if (n >= 1e6) return (n/1e6).toFixed(2)+'M';
+    if (n >= 1e3) return (n/1e3).toFixed(1)+'K';
+    return n.toFixed(1);
+}
+
+function fmtLeg(n) { return '$' + fmtNum(n); }
+
+// ── Search autocomplete ──────────────────────────────────────────────────
+async function loadSymbols() {
+    try {
+        allSymbols = await (await fetch('/api/symbols')).json();
+    } catch(e) {
+        allSymbols = ['BTCUSDT','ETHUSDT','SOLUSDT'];
     }
+}
 
-    function showDropdown(query) {
-        const dd = $('searchDropdown');
-        const q = query.toUpperCase();
-        if (!q) { dd.style.display = 'none'; return; }
-        const matches = allSymbols.filter(s => s.startsWith(q) || s.includes(q)).slice(0, 10);
-        if (!matches.length) { dd.style.display = 'none'; return; }
-        dd.innerHTML = matches.map(s => {
-            const base = s.replace(/USDT$/, '');
-            return `<div class="dd-item" data-symbol="${s}"><span class="dd-base">${base}</span><span class="dd-quote">/USDT</span></div>`;
-        }).join('');
-        dd.style.display = 'block';
-        dd.querySelectorAll('.dd-item').forEach(el => {
-            el.addEventListener('mousedown', (e) => { e.preventDefault(); selectSymbol(el.dataset.symbol); });
-        });
-    }
+function showDropdown(query) {
+    const dd   = $('searchDropdown');
+    const q    = query.toUpperCase();
+    if (!q) { dd.style.display = 'none'; return; }
+    const matches = allSymbols.filter(s => s.startsWith(q) || s.includes(q)).slice(0, 10);
+    if (!matches.length) { dd.style.display = 'none'; return; }
+    dd.innerHTML = matches.map(s => {
+        const base = s.replace(/USDT$/, '');
+        return `<div class="dd-item" data-symbol="${s}">
+            <span class="dd-base">${base}</span><span class="dd-quote">/USDT</span>
+        </div>`;
+    }).join('');
+    dd.style.display = 'block';
+    dd.querySelectorAll('.dd-item').forEach(el =>
+        el.addEventListener('mousedown', e => { e.preventDefault(); selectSymbol(el.dataset.symbol); })
+    );
+}
 
-    function selectSymbol(sym) {
-        $('symbolInput').value = sym;
-        $('searchDropdown').style.display = 'none';
-        symbol = sym;
-        currentCandle = null;
-        currentIndBucket = null;
-        candleSeries.setData([]);
-        bidLine.setData([]);
-        askLine.setData([]);
-        $('obAsks').innerHTML = '';
-        $('obBids').innerHTML = '';
-        loadKlines();
-        loadHistory();
-        tick();
-        writeLog(`Загрузка ${sym}...`);
-    }
+function selectSymbol(sym) {
+    $('symbolInput').value = sym;
+    $('searchDropdown').style.display = 'none';
+    symbol = sym;
+    currentCandle = null;
+    candleSeries.setData([]);
+    volumeSeries.setData([]);
+    bidLine.setData([]);
+    askLine.setData([]);
+    $('obAsks').innerHTML = '';
+    $('obBids').innerHTML = '';
+    $('oSym').textContent = sym.replace('USDT', '/USDT');
+    loadKlines();
+    loadHistory();
+    tick();
+    writeLog(`Загрузка ${sym}...`);
+}
 
-    document.addEventListener('DOMContentLoaded', () => {
-        const inp = $('symbolInput');
-        inp.addEventListener('input', () => showDropdown(inp.value));
-        inp.addEventListener('focus', () => showDropdown(inp.value));
-        inp.addEventListener('blur', () => setTimeout(() => { $('searchDropdown').style.display = 'none'; }, 150));
+document.addEventListener('DOMContentLoaded', () => {
+    const inp = $('symbolInput');
+    inp.addEventListener('input',  () => showDropdown(inp.value));
+    inp.addEventListener('focus',  () => showDropdown(inp.value));
+    inp.addEventListener('blur',   () => setTimeout(() => { $('searchDropdown').style.display='none'; }, 150));
+    inp.addEventListener('keydown', e => {
+        const dd    = $('searchDropdown');
+        const items = dd.querySelectorAll('.dd-item');
+        const active = dd.querySelector('.dd-item.hovered');
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            const next = active ? (active.nextElementSibling || items[0]) : items[0];
+            if (active) active.classList.remove('hovered');
+            if (next) { next.classList.add('hovered'); inp.value = next.dataset.symbol; }
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            const prev = active ? (active.previousElementSibling || items[items.length-1]) : items[items.length-1];
+            if (active) active.classList.remove('hovered');
+            if (prev) { prev.classList.add('hovered'); inp.value = prev.dataset.symbol; }
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            const sym = active ? active.dataset.symbol : inp.value.toUpperCase().trim();
+            if (sym) selectSymbol(sym);
+        } else if (e.key === 'Escape') {
+            dd.style.display = 'none';
+        }
+    });
+});
+
+// ── Chart initialisation ─────────────────────────────────────────────────
+function initChart() {
+
+    // ── Main candlestick chart ──
+    const chartEl = $('chartInner');
+
+    chart = LightweightCharts.createChart(chartEl, {
+        autoSize: true,
+        layout: {
+            background:  { color: '#0b0e14' },
+            textColor:   '#64748b',
+            fontFamily:  "'IBM Plex Mono', monospace",
+        },
+        grid: {
+            vertLines: { color: '#151822', style: 0 },
+            horzLines: { color: '#151822', style: 0 },
+        },
+        rightPriceScale: {
+            borderColor: '#222633',
+            scaleMargins: { top: 0.06, bottom: 0.22 },  // leave room for volume
+        },
+        timeScale: {
+            borderColor:  '#222633',
+            timeVisible:  true,
+            secondsVisible: false,
+            fixLeftEdge:  false,
+            fixRightEdge: false,
+            rightOffset:  8,
+        },
+        crosshair: {
+            mode: LightweightCharts.CrosshairMode.Normal,
+            vertLine: { color: '#334155', labelBackgroundColor: '#1e2230', width: 1, style: 0 },
+            horzLine: { color: '#334155', labelBackgroundColor: '#1e2230', width: 1, style: 0 },
+        },
+        localization: {
+            priceFormatter: fmtPrice,
+        },
     });
 
-    // ── Инициализация графиков ────────────────────────────────────────────────
-    function initChart() {
-        const container = $('chart');
-        chart = LightweightCharts.createChart(container, {
-            layout: { background: { color: '#0b0e14' }, textColor: '#64748b' },
-            grid: { vertLines: { color: '#151822' }, horzLines: { color: '#151822' } },
-            rightPriceScale: { borderColor: '#222633' },
-            timeScale: { borderColor: '#222633', timeVisible: true, visible: false }, 
-            crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-        });
+    // Candlestick series
+    candleSeries = chart.addCandlestickSeries({
+        upColor:        '#00E592',
+        downColor:      '#FF4976',
+        wickUpColor:    '#00E592',
+        wickDownColor:  '#FF4976',
+        borderVisible:  false,
+        priceLineVisible: true,
+        priceLineWidth:   1,
+        priceLineColor:   '#334155',
+        priceLineStyle:   LightweightCharts.LineStyle.Dashed,
+        lastValueVisible: true,
+    });
 
-        candleSeries = chart.addCandlestickSeries({
-            upColor: '#00E592', downColor: '#FF4976',
-            wickUpColor: '#00E592', wickDownColor: '#FF4976',
-            borderVisible: false
-        });
+    // Volume histogram (overlay on same chart, separate scale)
+    volumeSeries = chart.addHistogramSeries({
+        priceFormat:  { type: 'volume' },
+        priceScaleId: 'vol',
+    });
+    chart.priceScale('vol').applyOptions({
+        scaleMargins: { top: 0.78, bottom: 0 },
+        visible: false,
+    });
 
-        const indContainer = $('indicatorChart');
-        indicatorChart = LightweightCharts.createChart(indContainer, {
-            layout: { background: { color: '#0b0e14' }, textColor: '#64748b' },
-            grid: { vertLines: { color: '#151822' }, horzLines: { color: '#151822' } },
-            rightPriceScale: { borderColor: '#222633', scaleMargins: { top: 0.1, bottom: 0.1 } },
-            timeScale: { borderColor: '#222633', timeVisible: true },
-            crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-        });
+    // ── BID/ASK indicator chart ──
+    const indEl = $('indicatorChart');
 
-        bidLine = indicatorChart.addLineSeries({ color: '#00E592', lineWidth: 2, priceLineVisible: false, title: 'BID' });
-        askLine = indicatorChart.addLineSeries({ color: '#F59E0B', lineWidth: 2, priceLineVisible: false, title: 'ASK' });
+    indicatorChart = LightweightCharts.createChart(indEl, {
+        autoSize: true,
+        layout: {
+            background: { color: '#0b0e14' },
+            textColor:  '#64748b',
+            fontFamily: "'IBM Plex Mono', monospace",
+        },
+        grid: {
+            vertLines: { color: '#151822' },
+            horzLines: { color: '#151822' },
+        },
+        rightPriceScale: {
+            borderColor:   '#222633',
+            scaleMargins:  { top: 0.1, bottom: 0.1 },
+        },
+        timeScale: {
+            borderColor:    '#222633',
+            timeVisible:    true,
+            secondsVisible: false,
+            visible: false,   // time axis on the indicator is redundant (main chart shows it)
+        },
+        crosshair: {
+            mode: LightweightCharts.CrosshairMode.Normal,
+            vertLine: { color: '#334155', labelBackgroundColor: '#1e2230', width: 1, style: 0 },
+            horzLine: { color: '#334155', labelBackgroundColor: '#1e2230', width: 1, style: 0 },
+        },
+    });
 
-        // Синхронизация масштабирования
-        chart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-            if (syncingMain) return;
+    // BID line (green)
+    bidLine = indicatorChart.addLineSeries({
+        color:            '#00E592',
+        lineWidth:        2,
+        lastValueVisible: true,
+        priceLineVisible: false,
+        title:            'BID',
+    });
+
+    // ASK line (orange)
+    askLine = indicatorChart.addLineSeries({
+        color:            '#F59E0B',
+        lineWidth:        2,
+        lastValueVisible: true,
+        priceLineVisible: false,
+        title:            'ASK',
+    });
+
+    // ── Sync timescales ──
+    chart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+        if (syncingMain) return;
+        syncingInd = true;
+        indicatorChart.timeScale().setVisibleLogicalRange(range);
+        syncingInd = false;
+    });
+    indicatorChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+        if (syncingInd) return;
+        syncingMain = true;
+        chart.timeScale().setVisibleLogicalRange(range);
+        syncingMain = false;
+    });
+
+    // ── Crosshair sync + OHLCV overlay ──
+    chart.subscribeCrosshairMove(param => {
+        // Update OHLCV overlay
+        if (param.time) {
+            const candle = param.seriesData.get(candleSeries);
+            const vol    = param.seriesData.get(volumeSeries);
+            if (candle) updateOhlcvBar(candle, vol ? vol.value : null);
+
+            // Sync to indicator
+            if (!syncingMain) {
+                syncingMain = true;
+                indicatorChart.setCrosshairPosition(0, param.time, bidLine);
+                syncingMain = false;
+            }
+        } else {
+            // Restore to last candle
+            if (currentCandle) updateOhlcvBar(currentCandle, currentCandle.volume);
+            indicatorChart.clearCrosshairPosition();
+        }
+    });
+
+    indicatorChart.subscribeCrosshairMove(param => {
+        if (!param.time) return;
+        if (!syncingInd) {
             syncingInd = true;
-            indicatorChart.timeScale().setVisibleLogicalRange(range);
-            syncingInd = false;
-        });
-        indicatorChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-            if (syncingInd) return;
-            syncingMain = true;
-            chart.timeScale().setVisibleLogicalRange(range);
-            syncingMain = false;
-        });
-
-        // Синхронизация курсора
-        chart.subscribeCrosshairMove(param => {
-            if (!param.time) return;
-            indicatorChart.setCrosshairPosition(0, param.time, bidLine);
-        });
-        indicatorChart.subscribeCrosshairMove(param => {
-            if (!param.time) return;
             chart.setCrosshairPosition(0, param.time, candleSeries);
-        });
+            syncingInd = false;
+        }
+    });
+}
 
-        window.addEventListener('resize', () => {
-            chart.resize(container.clientWidth, container.clientHeight);
-            indicatorChart.resize(indContainer.clientWidth, indContainer.clientHeight);
-        });
+// ── OHLCV overlay update ─────────────────────────────────────────────────
+function updateOhlcvBar(candle, vol) {
+    const { open, high, low, close } = candle;
+    const pct   = ((close - open) / open) * 100;
+    const color = close >= open ? 'var(--green)' : 'var(--red)';
+
+    $('oO').textContent    = fmtPrice(open);
+    $('oH').textContent    = fmtPrice(high);
+    $('oL').textContent    = fmtPrice(low);
+    $('oC').textContent    = fmtPrice(close);
+    $('oC').style.color    = color;
+    $('oVol').textContent  = vol != null ? fmtNum(vol) : '—';
+
+    const pctEl = $('oPct');
+    pctEl.textContent    = (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
+    pctEl.style.color    = close >= open ? 'var(--green)' : 'var(--red)';
+    pctEl.style.background = close >= open ? 'rgba(0,229,146,0.1)' : 'rgba(255,73,118,0.1)';
+}
+
+// ── Data loading ─────────────────────────────────────────────────────────
+async function loadKlines() {
+    try {
+        writeLog(`Загрузка свечей [${interval}]...`);
+        const res  = await fetch(`/api/klines?symbol=${symbol}&interval=${interval}`);
+        const data = await res.json();
+
+        const candles = data.map(d => ({
+            time:   d[0] / 1000,
+            open:   parseFloat(d[1]),
+            high:   parseFloat(d[2]),
+            low:    parseFloat(d[3]),
+            close:  parseFloat(d[4]),
+            volume: parseFloat(d[5]),        // base-asset volume
+        }));
+
+        const volumes = candles.map(c => ({
+            time:  c.time,
+            value: c.volume,
+            color: c.close >= c.open
+                ? 'rgba(0,229,146,0.5)'
+                : 'rgba(255,73,118,0.5)',
+        }));
+
+        candleSeries.setData(candles);
+        volumeSeries.setData(volumes);
+
+        if (candles.length > 0) {
+            currentCandle = { ...candles[candles.length - 1] };
+            updateOhlcvBar(currentCandle, currentCandle.volume);
+            // Update 24h high/low from klines (last 1440 candles @ 1m ≈ 24h)
+            const highs = candles.map(c => c.high);
+            const lows  = candles.map(c => c.low);
+            $('hHigh').textContent = 'H: ' + fmtPrice(Math.max(...highs));
+            $('hLow').textContent  = 'L: ' + fmtPrice(Math.min(...lows));
+        }
+
+        chart.timeScale().fitContent();
+        writeLog(`Загружено ${candles.length} свечей`);
+    } catch(e) {
+        writeLog('Ошибка загрузки свечей.');
     }
+}
 
-    // ── Загрузка данных ──────────────────────────────────────────────────
-    async function loadKlines() {
-        try {
-            writeLog(`Загрузка свечей ${interval}...`);
-            const res = await fetch(`/api/klines?symbol=${symbol}&interval=${interval}`);
-            const data = await res.json();
-            const parsed = data.map(d => ({
-                time: Math.floor(d[0]/1000),
-                open: parseFloat(d[1]), high: parseFloat(d[2]),
-                low: parseFloat(d[3]), close: parseFloat(d[4])
-            }));
-            candleSeries.setData(parsed);
-            
-            // Сохраняем последнюю свечу для корректного обновления
-            if (parsed.length > 0) currentCandle = parsed[parsed.length - 1];
-            
-            chart.timeScale().fitContent();
-        } catch(e) { writeLog("Ошибка загрузки свечей."); }
-    }
+async function loadHistory() {
+    try {
+        const res  = await fetch(`/api/history?symbol=${symbol}`);
+        const data = await res.json();
 
-    async function loadHistory() {
-        try {
-            const res = await fetch(`/api/history?symbol=${symbol}&limit=1000`);
-            const data = await res.json();
-            if (data.length > 0) {
-                const coeff = tfSeconds[interval];
-                const bidData = [];
-                const askData = [];
-                let bucket = null;
-
-                // Агрегация индикатора под выбранный таймфрейм
-                data.forEach(row => {
-                    const t = Math.floor(new Date(row.time).getTime() / 1000);
-                    const bucketTime = Math.floor(t / coeff) * coeff;
-
-                    if (!bucket || bucket.time !== bucketTime) {
-                        if (bucket) {
-                            bidData.push({ time: bucket.time, value: bucket.bid });
-                            askData.push({ time: bucket.time, value: bucket.ask });
-                        }
-                        bucket = { time: bucketTime, bid: row.bidUSD, ask: row.askUSD };
-                    } else {
-                        bucket.bid = row.bidUSD;
-                        bucket.ask = row.askUSD;
-                    }
-                });
-
-                if (bucket) {
-                    bidData.push({ time: bucket.time, value: bucket.bid });
-                    askData.push({ time: bucket.time, value: bucket.ask });
-                    currentIndBucket = bucket; // Сохраняем последний бар индикатора
+        if (data.length > 0) {
+            // Remove duplicate timestamps before setData
+            const seen = new Set();
+            const bidData = [], askData = [];
+            data.forEach(d => {
+                const t = Math.floor(new Date(d.timestamp).getTime() / 1000);
+                if (!seen.has(t)) {
+                    seen.add(t);
+                    bidData.push({ time: t, value: d.bidUSD });
+                    askData.push({ time: t, value: d.askUSD });
                 }
+            });
+            bidLine.setData(bidData);
+            askLine.setData(askData);
+            indicatorChart.timeScale().fitContent();
 
-                bidLine.setData(bidData);
-                askLine.setData(askData);
-                indicatorChart.timeScale().fitContent();
+            const last = data[data.length - 1];
+            updateLegend(last.bidUSD, last.askUSD);
+        }
+    } catch(e) {}
+}
 
-                const last = data[data.length - 1];
-                updateLegend(last.bidUSD, last.askUSD);
-            }
-        } catch(e) {}
-    }
+function updateLegend(bidUSD, askUSD) {
+    const diff = bidUSD - askUSD;
+    $('legBid').textContent   = 'BID — '  + fmtLeg(bidUSD);
+    $('legAsk').textContent   = 'ASK — '  + fmtLeg(askUSD);
+    $('legDiff').style.color  = diff > 0 ? 'var(--green)' : diff < 0 ? 'var(--red)' : '#94a3b8';
+    $('legDiff').textContent  = 'DIFF — ' + (diff >= 0 ? '+' : '') + fmtLeg(diff);
+}
 
-    function updateLegend(bidUSD, askUSD) {
-        const diff = bidUSD - askUSD;
-        $('legBid').textContent = 'BID — ' + fmtLeg(bidUSD);
-        $('legAsk').textContent = 'ASK — ' + fmtLeg(askUSD);
-        $('legDiff').style.color = diff > 0 ? 'var(--green)' : diff < 0 ? 'var(--red)' : '#94a3b8';
-        $('legDiff').textContent = 'DIFF — ' + (diff >= 0 ? '+' : '') + fmtLeg(diff);
-    }
+// ── Order book render ─────────────────────────────────────────────────────
+function renderOrderBook(book, currentPrice) {
+    $('obMidPrice').innerText = fmtPrice(currentPrice);
 
-    // ── Отрисовка стакана ────────────────────────────────────────────────
-    function renderOrderBook(book, currentPrice) {
-        $('obMidPrice').innerText = fmtPrice(currentPrice);
+    const asks    = book.asks.slice(0, 15).reverse();
+    const maxAsk  = Math.max(...asks.map(a => parseFloat(a[0]) * parseFloat(a[1])));
+    let htmlAsk   = '', askTot = 0;
+    asks.forEach(a => {
+        const p = parseFloat(a[0]), v = parseFloat(a[1]), usd = p * v;
+        askTot += usd;
+        const w = Math.round((usd / maxAsk) * 100);
+        htmlAsk += `<div class="ob-row">
+            <div class="ob-bg bg-red" style="width:${w}%"></div>
+            <span class="c-red">${fmtPrice(p)}</span>
+            <span>${v.toFixed(3)}</span>
+            <span>${fmtNum(askTot)}</span>
+        </div>`;
+    });
+    $('obAsks').innerHTML = htmlAsk;
 
-        const asks = book.asks.slice(0, 15).reverse();
-        const maxAsk = Math.max(...asks.map(a => parseFloat(a[0]) * parseFloat(a[1])));
-        let htmlAsk = '', askTot = 0;
-        asks.forEach(a => {
-            const p = parseFloat(a[0]), v = parseFloat(a[1]), usd = p * v;
-            askTot += usd;
-            const w = Math.round((usd / maxAsk) * 100);
-            htmlAsk += `<div class="ob-row"><div class="ob-bg bg-red" style="width:${w}%"></div><span class="c-red">${fmtPrice(p)}</span><span>${v.toFixed(3)}</span><span>${fmtNum(askTot)}</span></div>`;
-        });
-        $('obAsks').innerHTML = htmlAsk;
+    const bids   = book.bids.slice(0, 15);
+    const maxBid = Math.max(...bids.map(b => parseFloat(b[0]) * parseFloat(b[1])));
+    let htmlBid  = '', bidTot = 0;
+    bids.forEach(b => {
+        const p = parseFloat(b[0]), v = parseFloat(b[1]), usd = p * v;
+        bidTot += usd;
+        const w = Math.round((usd / maxBid) * 100);
+        htmlBid += `<div class="ob-row">
+            <div class="ob-bg bg-green" style="width:${w}%"></div>
+            <span class="c-green">${fmtPrice(p)}</span>
+            <span>${v.toFixed(3)}</span>
+            <span>${fmtNum(bidTot)}</span>
+        </div>`;
+    });
+    $('obBids').innerHTML = htmlBid;
+}
 
-        const bids = book.bids.slice(0, 15);
-        const maxBid = Math.max(...bids.map(b => parseFloat(b[0]) * parseFloat(b[1])));
-        let htmlBid = '', bidTot = 0;
-        bids.forEach(b => {
-            const p = parseFloat(b[0]), v = parseFloat(b[1]), usd = p * v;
-            bidTot += usd;
-            const w = Math.round((usd / maxBid) * 100);
-            htmlBid += `<div class="ob-row"><div class="ob-bg bg-green" style="width:${w}%"></div><span class="c-green">${fmtPrice(p)}</span><span>${v.toFixed(3)}</span><span>${fmtNum(bidTot)}</span></div>`;
-        });
-        $('obBids').innerHTML = htmlBid;
-    }
+// ── Live tick ────────────────────────────────────────────────────────────
+let prevPrice = null;
 
-    // ── Живое обновление (Tick) ──────────────────────────────────────────
-    async function tick() {
-        try {
-            const res = await fetch(`/api/data?symbol=${symbol}&depth=5`);
-            const data = await res.json();
-            if (data.error) return;
+async function tick() {
+    try {
+        const res  = await fetch(`/api/data?symbol=${symbol}&depth=5`);
+        const data = await res.json();
+        if (data.error) return;
 
-            $('vBid').innerText = '$' + fmtNum(data.bidUSD);
-            $('vAsk').innerText = '$' + fmtNum(data.askUSD);
-            const imb = data.askUSD > 0 ? (data.bidUSD / data.askUSD) : 0;
-            $('vImb').innerText = imb.toFixed(2) + 'x';
-            $('vImb').style.color = imb > 1.2 ? 'var(--green)' : imb < 0.8 ? 'var(--red)' : 'white';
+        const price = data.price;
 
-            updateLegend(data.bidUSD, data.askUSD);
-            renderOrderBook(data.book, data.price);
+        // ── Header price display ──
+        $('hPrice').textContent = fmtPrice(price);
+        if (prevPrice !== null) {
+            const up = price >= prevPrice;
+            $('hPrice').style.color = up ? 'var(--green)' : 'var(--red)';
+            setTimeout(() => { $('hPrice').style.color = 'var(--text-main)'; }, 400);
+        }
+        prevPrice = price;
 
-            // === КОРРЕКТНОЕ ОБНОВЛЕНИЕ СВЕЧИ И ЛИНИЙ ===
-            const t = Math.floor(Date.now() / 1000);
-            const coeff = tfSeconds[interval];
-            const alignedTime = Math.floor(t / coeff) * coeff; // Выравниваем время по таймфрейму
+        // ── Metrics ──
+        $('vBid').innerText = '$' + fmtNum(data.bidUSD);
+        $('vAsk').innerText = '$' + fmtNum(data.askUSD);
+        const imb = data.askUSD > 0 ? (data.bidUSD / data.askUSD) : 0;
+        $('vImb').innerText     = imb.toFixed(2) + 'x';
+        $('vImb').style.color   = imb > 1.2 ? 'var(--green)' : imb < 0.8 ? 'var(--red)' : 'white';
 
-            // Обновляем СВЕЧУ
-            if (!currentCandle || currentCandle.time !== alignedTime) {
-                currentCandle = { time: alignedTime, open: data.price, high: data.price, low: data.price, close: data.price };
-            } else {
-                currentCandle.high = Math.max(currentCandle.high, data.price);
-                currentCandle.low = Math.min(currentCandle.low, data.price);
-                currentCandle.close = data.price;
-            }
-            try { candleSeries.update(currentCandle); } catch(e){}
+        updateLegend(data.bidUSD, data.askUSD);
 
-            // Обновляем ИНДИКАТОР (в тот же alignedTime)
-            if (!currentIndBucket || currentIndBucket.time !== alignedTime) {
-                currentIndBucket = { time: alignedTime, bid: data.bidUSD, ask: data.askUSD };
-            } else {
-                currentIndBucket.bid = data.bidUSD;
-                currentIndBucket.ask = data.askUSD;
+        // ── Header 24h change: compute from klines open ──
+        if (currentCandle) {
+            // Use first loaded candle open to approximate 24h change
+            // (klines[0].open stored separately below)
+        }
+
+        // ── Smart candle update ──
+        const now        = Math.floor(Date.now() / 1000);
+        const candleTime = Math.floor(now / tfSec) * tfSec;
+
+        if (currentCandle) {
+            if (candleTime === currentCandle.time) {
+                // Same candle — update high, low, close; preserve open
+                currentCandle.close = price;
+                currentCandle.high  = Math.max(currentCandle.high, price);
+                currentCandle.low   = Math.min(currentCandle.low,  price);
+            } else if (candleTime > currentCandle.time) {
+                // New candle
+                currentCandle = {
+                    time:   candleTime,
+                    open:   price,
+                    high:   price,
+                    low:    price,
+                    close:  price,
+                    volume: 0,
+                };
             }
             try {
-                bidLine.update({ time: alignedTime, value: currentIndBucket.bid });
-                askLine.update({ time: alignedTime, value: currentIndBucket.ask });
-            } catch(e){}
+                candleSeries.update(currentCandle);
+                updateOhlcvBar(currentCandle, currentCandle.volume);
+            } catch(e) {}
+        }
 
-            writeLog(`Обновлено: ${symbol} | Цена: $${fmtPrice(data.price)}`);
+        // ── Indicator live update ──
+        try {
+            bidLine.update({ time: now, value: data.bidUSD });
+            askLine.update({ time: now, value: data.askUSD });
         } catch(e) {}
+
+        // ── Order book ──
+        renderOrderBook(data.book, price);
+
+        writeLog(
+            `${symbol} | ${fmtPrice(price)} | BID: ${fmtLeg(data.bidUSD)} | ASK: ${fmtLeg(data.askUSD)} | IMB: ${imb.toFixed(2)}x`
+        );
+    } catch(e) {
+        writeLog('Ошибка соединения...');
     }
+}
 
-    // ── Переключение таймфреймов ──────────────────────────────────────────
-    document.querySelectorAll('.tf-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
-            e.target.classList.add('active');
-            
-            interval = e.target.getAttribute('data-tf');
-            
-            // Очищаем графики и сбрасываем локальное состояние
-            currentCandle = null;
-            currentIndBucket = null;
-            candleSeries.setData([]);
-            bidLine.setData([]);
-            askLine.setData([]);
-
-            // Загружаем заново с учетом нового таймфрейма
-            loadKlines();
-            loadHistory();
-        });
-    });
-
-    window.onload = () => {
-        $('symbolInput').value = symbol;
-        initChart();
-        loadSymbols();
+// ── Timeframe buttons ────────────────────────────────────────────────────
+document.querySelectorAll('.tf-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        interval     = btn.dataset.tf;
+        tfSec        = parseInt(btn.dataset.sec, 10);
+        currentCandle = null;
+        candleSeries.setData([]);
+        volumeSeries.setData([]);
         loadKlines();
-        loadHistory();
-        setInterval(tick, 3000);
-        tick();
-    };
+    });
+});
+
+// ── Bootstrap ────────────────────────────────────────────────────────────
+window.onload = () => {
+    $('symbolInput').value  = symbol;
+    $('oSym').textContent   = symbol.replace('USDT', '/USDT');
+    initChart();
+    loadSymbols();
+    loadKlines();
+    loadHistory();
+    tick();
+    setInterval(tick, 3000);
+};
 </script>
 </body>
 </html>
