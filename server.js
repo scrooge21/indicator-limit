@@ -114,16 +114,60 @@ app.get('/api/data', async (req, res) => {
 });
 
 // ── API: History ─────────────────────────────────────────────────────────
+// Query params:
+//   symbol  — торговая пара (default BTCUSDT)
+//   since   — Unix-timestamp в секундах; вернуть записи начиная с этого момента
+//   bucket  — размер корзины агрегации в секундах (default 0 = без агрегации)
+//             при bucket > 0 возвращает по одной точке (последнее значение) на каждый интервал
+//   limit   — максимум записей (default 2000, max 20000)
 app.get('/api/history', async (req, res) => {
     try {
         const symbol = (req.query.symbol || 'BTCUSDT').toUpperCase();
-        const limit  = Math.min(parseInt(req.query.limit) || 300, 1000);
-        const data   = await History
-            .find({ symbol })
-            .sort({ timestamp: -1 })
+        const limit  = Math.min(parseInt(req.query.limit)  || 2000, 20000);
+        const bucket = parseInt(req.query.bucket) || 0;   // секунды, 0 = raw
+        const since  = req.query.since
+            ? new Date(parseInt(req.query.since, 10) * 1000)
+            : null;
+
+        const match = { symbol };
+        if (since) match.timestamp = { $gte: since };
+
+        if (bucket > 0) {
+            // Агрегация: группируем по временным корзинам bucket-секунд,
+            // берём последнее bidUSD/askUSD в каждой корзине.
+            const bucketMs = bucket * 1000;
+            const pipeline = [
+                { $match: match },
+                { $sort:  { timestamp: 1 } },
+                {
+                    $group: {
+                        _id: {
+                            $subtract: [
+                                { $toLong: '$timestamp' },
+                                { $mod: [{ $toLong: '$timestamp' }, bucketMs] }
+                            ]
+                        },
+                        timestamp: { $last: '$timestamp' },
+                        bidUSD:    { $last: '$bidUSD' },
+                        askUSD:    { $last: '$askUSD' },
+                        imbalance: { $last: '$imbalance' }
+                    }
+                },
+                { $sort:  { _id: 1 } },
+                { $limit: limit },
+                { $project: { _id: 0, timestamp: 1, bidUSD: 1, askUSD: 1, imbalance: 1 } }
+            ];
+            const data = await History.aggregate(pipeline);
+            return res.json(data);
+        }
+
+        // Raw (без агрегации)
+        const data = await History
+            .find(match)
+            .sort({ timestamp: 1 })
             .limit(limit)
             .lean();
-        res.json(data.reverse());
+        res.json(data);
     } catch (e) { res.json([]); }
 });
 

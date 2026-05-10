@@ -519,25 +519,26 @@ async function loadKlines() {
 
 async function loadHistory() {
     try {
-        const res  = await fetch(`/api/history?symbol=${symbol}&limit=1000`);
+        // Запрашиваем данные за окно = 200 свечей текущего таймфрейма,
+        // но не более 7 дней (TTL MongoDB).
+        // Агрегируем на сервере по корзинам tfSec секунд —
+        // одна точка BID/ASK на одну свечу.
+        const windowSec = Math.min(200 * tfSec, 7 * 24 * 3600);
+        const since     = Math.floor(Date.now() / 1000) - windowSec;
+        const url = `/api/history?symbol=${symbol}&since=${since}&bucket=${tfSec}&limit=500`;
+
+        const res  = await fetch(url);
         const data = await res.json();
 
         if (data.length > 0) {
-            // Aggregate raw DB points (saved every ~3-15s) into tfSec-sized buckets,
-            // matching the candlestick timeframe exactly.
-            // Each bucket gets the LAST bidUSD/askUSD value in that interval.
-            const buckets = new Map(); // bucketTime → { bidUSD, askUSD }
-            data.forEach(d => {
-                const rawSec    = Math.floor(new Date(d.timestamp).getTime() / 1000);
-                const bucketTime = Math.floor(rawSec / tfSec) * tfSec;
-                // Always overwrite so bucket ends up with the last (most recent) value
-                buckets.set(bucketTime, { bidUSD: d.bidUSD, askUSD: d.askUSD });
-            });
-
-            // Sort by time and build series arrays
-            const sorted  = [...buckets.entries()].sort((a, b) => a[0] - b[0]);
-            const bidData = sorted.map(([t, v]) => ({ time: t, value: v.bidUSD }));
-            const askData = sorted.map(([t, v]) => ({ time: t, value: v.askUSD }));
+            const bidData = data.map(d => ({
+                time:  Math.floor(new Date(d.timestamp).getTime() / 1000),
+                value: d.bidUSD
+            }));
+            const askData = data.map(d => ({
+                time:  Math.floor(new Date(d.timestamp).getTime() / 1000),
+                value: d.askUSD
+            }));
 
             bidLine.setData(bidData);
             askLine.setData(askData);
