@@ -201,19 +201,6 @@ let currentCandle = null;  // { time, open, high, low, close, volume }
 
 const $ = id => document.getElementById(id);
 
-// ── Sync helper ───────────────────────────────────────────────────────────
-// Копирует видимый логический диапазон главного графика в индикатор.
-// Вызывается после любого fitContent() или смены данных.
-function syncIndicatorToMain() {
-    if (!chart || !indicatorChart) return;
-    const range = chart.timeScale().getVisibleRange();   // реальное время, не индексы
-    if (range) {
-        syncingMain = true;
-        indicatorChart.timeScale().setVisibleRange(range);
-        syncingMain = false;
-    }
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────
 function writeLog(m) {
     $('log').innerText = `[${new Date().toLocaleTimeString()}] ${m}`;
@@ -422,20 +409,17 @@ function initChart() {
         title:            'ASK',
     });
 
-    // ── Sync timescales — по ВРЕМЕНИ, не по индексам ──
-    // setVisibleLogicalRange синхронизирует индексы, из-за чего графики
-    // с разным числом точек показывают разные даты.
-    // setVisibleRange синхронизирует реальное время — правильное решение.
-    chart.timeScale().subscribeVisibleTimeRangeChange(range => {
-        if (syncingMain || !range) return;
+    // ── Sync timescales ──
+    chart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+        if (syncingMain) return;
         syncingInd = true;
-        indicatorChart.timeScale().setVisibleRange(range);
+        indicatorChart.timeScale().setVisibleLogicalRange(range);
         syncingInd = false;
     });
-    indicatorChart.timeScale().subscribeVisibleTimeRangeChange(range => {
-        if (syncingInd || !range) return;
+    indicatorChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+        if (syncingInd) return;
         syncingMain = true;
-        chart.timeScale().setVisibleRange(range);
+        chart.timeScale().setVisibleLogicalRange(range);
         syncingMain = false;
     });
 
@@ -527,12 +511,6 @@ async function loadKlines() {
         }
 
         chart.timeScale().fitContent();
-
-        // После fitContent браузер ещё не перерисовал — ждём следующий кадр,
-        // чтобы getVisibleLogicalRange() вернул актуальный диапазон,
-        // и принудительно копируем его в индикатор.
-        requestAnimationFrame(() => syncIndicatorToMain());
-
         writeLog(`Загружено ${candles.length} свечей`);
     } catch(e) {
         writeLog('Ошибка загрузки свечей.');
@@ -564,9 +542,7 @@ async function loadHistory() {
 
             bidLine.setData(bidData);
             askLine.setData(askData);
-            // НЕ вызываем indicatorChart.timeScale().fitContent() —
-            // индикатор всегда должен показывать тот же диапазон, что и главный график.
-            requestAnimationFrame(() => syncIndicatorToMain());
+            indicatorChart.timeScale().fitContent();
 
             const last = data[data.length - 1];
             updateLegend(last.bidUSD, last.askUSD);
