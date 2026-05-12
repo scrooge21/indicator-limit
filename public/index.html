@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta charset="UTF-8">
     <title>MEXC PRO TERMINAL</title>
     <link rel="stylesheet" href="/style.css">
@@ -270,13 +271,18 @@ function selectSymbol(sym) {
 
 document.addEventListener('DOMContentLoaded', () => {
     const inp = $('symbolInput');
+    
+    // Обработчики ввода и фокуса
     inp.addEventListener('input',  () => showDropdown(inp.value));
     inp.addEventListener('focus',  () => showDropdown(inp.value));
     inp.addEventListener('blur',   () => setTimeout(() => { $('searchDropdown').style.display='none'; }, 150));
+    
+    // Управление списком с клавиатуры
     inp.addEventListener('keydown', e => {
         const dd    = $('searchDropdown');
         const items = dd.querySelectorAll('.dd-item');
         const active = dd.querySelector('.dd-item.hovered');
+        
         if (e.key === 'ArrowDown') {
             e.preventDefault();
             const next = active ? (active.nextElementSibling || items[0]) : items[0];
@@ -295,6 +301,14 @@ document.addEventListener('DOMContentLoaded', () => {
             dd.style.display = 'none';
         }
     });
+
+    // ── Мобильная адаптация ──
+    // Скрываем выпадающий список и убираем фокус (прячем экранную клавиатуру) 
+    // при любой попытке прокрутить страницу вниз
+    window.addEventListener('scroll', () => {
+        $('searchDropdown').style.display = 'none';
+        inp.blur();
+    }, { passive: true });
 });
 
 // ── Chart initialisation ─────────────────────────────────────────────────

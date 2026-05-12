@@ -268,3 +268,133 @@ body {
 .dd-base  { color: var(--text-main); font-weight: 600; }
 .dd-quote { color: var(--text-muted); font-size: 11px; }
 .dd-item mark { background: none; color: var(--accent); }
+
+
+/* ════════════════════════ MOBILE ADAPTATION (MAX-WIDTH 850px) ════════════════════════ */
+@media (max-width: 850px) {
+    /* Отключаем жесткую фиксацию высоты, разрешаем скролл всей страницы */
+    body {
+        height: auto;
+        min-height: 100vh;
+        overflow-y: auto;
+    }
+
+    /* ── Шапка терминала ── */
+    .header {
+        flex-direction: column;
+        align-items: stretch;
+        padding: 10px 15px;
+        gap: 12px;
+    }
+    .header > div:first-child {
+        justify-content: space-between; /* Лого слева, навигация справа */
+    }
+    
+    #priceHeader {
+        justify-content: space-between;
+        padding: 5px 0;
+        border-top: 1px solid var(--border);
+        border-bottom: 1px solid var(--border);
+    }
+    
+    /* Делаем тулбар с таймфреймами скроллируемым по горизонтали */
+    .toolbar {
+        overflow-x: auto;
+        padding-bottom: 4px; /* Место под скроллбар */
+        -webkit-overflow-scrolling: touch; /* Плавный скролл на iOS */
+    }
+    
+    /* Защита от зума на iOS при фокусе в инпут */
+    .search-input {
+        font-size: 16px; 
+    }
+
+    /* ── Главная сетка: блоки друг под другом ── */
+    .main-grid {
+        flex-direction: column;
+        overflow: visible;
+    }
+    .left-col {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+    }
+    .right-col {
+        width: 100%;
+        border-top: 5px solid var(--bg-main);
+    }
+
+    /* ── Графики (задаем фиксированную высоту для мобилок) ── */
+    .chart-container {
+        flex: none;
+        height: 350px; 
+    }
+    .indicator-container {
+        flex: none;
+        height: 200px;
+    }
+
+    /* Компактный OHLCV бар */
+    #ohlcvBar {
+        top: 5px;
+        left: 5px;
+        gap: 8px;
+    }
+    #ohlcvBar span {
+        font-size: 10px;
+    }
+
+    /* Компактная легенда индикатора */
+    .indicator-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+    }
+
+    /* Компактные метрики */
+    .metric-box {
+        padding: 10px 5px;
+    }
+    .m-title {
+        font-size: 9px;
+    }
+    .m-value {
+        font-size: 14px;
+    }
+
+    /* ── Биржевой стакан (Order Book) ── */
+    .ob-list {
+        max-height: 400px; /* Ограничиваем высоту на мобилках */
+        overflow-y: auto;  /* Разрешаем скроллить стакан внутри */
+    }
+
+    /* ── Страница сканера (таблица из table.html) ── */
+    .sc-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .depth-preset, .limit-wrap {
+        justify-content: space-between;
+    }
+    #scanBtn {
+        width: 100%;
+        padding: 12px;
+        font-size: 14px;
+        margin-top: 8px;
+    }
+    .filter-bar {
+        flex-wrap: wrap;
+    }
+    .filter-input {
+        width: 100%; /* Поиск на всю ширину */
+    }
+    
+    /* Таблица: делаем её скроллируемой вправо-влево */
+    .table-wrap {
+        margin: 0 10px 10px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    table {
+        min-width: 700px; /* Заставляем таблицу не сжиматься, чтобы появился горизонтальный скролл */
+    }
+}
