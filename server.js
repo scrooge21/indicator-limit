@@ -15,46 +15,88 @@ const BASE_URL = 'https://api.mexc.com';
 let cachedSymbols = [];
 
 // ── MongoDB ──────────────────────────────────────────────────────────────
-if (process.env.MONGODB_URI) {
-    mongoose.connect(process.env.MONGODB_URI)
-        .then(() => console.log('✅ MongoDB Connected'))
-        .catch(err => console.error('❌ MongoDB Error:', err));
-}
+const HISTORY_TTL_SECONDS = 7 * 24 * 3600;   // хранить историю 7 дней
+const LOG_INTERVAL_MS     = 15000;           // период записи точек
+const FETCH_TIMEOUT_MS    = 8000;            // таймаут запросов к бирже
+
+// Пары, для которых сервер сам копит историю (через запятую, переменная PINNED_PAIRS).
+// История пишется ТОЛЬКО отсюда — число открытых вкладок на размер базы не влияет.
+const PINNED_PAIRS = (process.env.PINNED_PAIRS || 'BTCUSDT,ETHUSDT,SOLUSDT')
+    .split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
 
 const historySchema = new mongoose.Schema({
-    timestamp: { type: Date, default: Date.now, index: true },
-    symbol:    { type: String, index: true },
+    timestamp: { type: Date, default: Date.now },
+    symbol:    String,
     price:     Number,
     bidUSD:    Number,
     askUSD:    Number,
     imbalance: Number
+}, {
+    autoIndex:  false,   // индексы синхронизируем явно ниже (syncIndexes)
+    versionKey: false    // не храним лишнее поле __v
 });
-// TTL: автоматически удалять записи старше 7 дней
-historySchema.index({ timestamp: 1 }, { expireAfterSeconds: 7 * 24 * 3600 });
+// Единственный индекс по timestamp — TTL (он же обслуживает сортировку по времени)
+historySchema.index({ timestamp: 1 }, { expireAfterSeconds: HISTORY_TTL_SECONDS });
+// Под запросы /api/history: фильтр по symbol + диапазон и сортировка по timestamp
+historySchema.index({ symbol: 1, timestamp: 1 });
 const History = mongoose.model('History', historySchema);
 
-// ── Background logger for "pinned" pairs ─────────────────────────────────
-const PINNED_PAIRS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
+if (process.env.MONGODB_URI) {
+    mongoose.connect(process.env.MONGODB_URI)
+        .then(async () => {
+            console.log('✅ MongoDB Connected');
+            try {
+                // Приводит индексы в базе к схеме: убирает дубли/старые (в т.ч. обычный
+                // timestamp_1, из-за которого TTL не создавался) и создаёт недостающие.
+                const dropped = await History.syncIndexes();
+                console.log('✅ Indexes synced', dropped.length ? `(dropped: ${dropped.join(', ')})` : '');
+            } catch (err) {
+                console.error('❌ Index sync error:', err.message);
+            }
+        })
+        .catch(err => console.error('❌ MongoDB Error:', err));
+}
 
-async function fetchAndSave(symbol) {
-    const ticker = await (await fetch(`${BASE_URL}/api/v3/ticker/price?symbol=${symbol}`)).json();
-    const book   = await (await fetch(`${BASE_URL}/api/v3/depth?symbol=${symbol}&limit=1000`)).json();
+// ── Background logger for "pinned" pairs ─────────────────────────────────
+async function fetchJson(url) {
+    const r = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+}
+
+async function fetchSnapshot(symbol) {
+    const [ticker, book] = await Promise.all([
+        fetchJson(`${BASE_URL}/api/v3/ticker/price?symbol=${encodeURIComponent(symbol)}`),
+        fetchJson(`${BASE_URL}/api/v3/depth?symbol=${encodeURIComponent(symbol)}&limit=1000`)
+    ]);
     const price  = parseFloat(ticker.price);
-    const bidUSD = book.bids.filter(b => b[0] >= price * 0.95).reduce((s, b) => s + (parseFloat(b[0]) * parseFloat(b[1])), 0);
-    const askUSD = book.asks.filter(a => a[0] <= price * 1.05).reduce((s, a) => s + (parseFloat(a[0]) * parseFloat(a[1])), 0);
+    const bidUSD = book.bids.filter(b => parseFloat(b[0]) >= price * 0.95).reduce((s, b) => s + (parseFloat(b[0]) * parseFloat(b[1])), 0);
+    const askUSD = book.asks.filter(a => parseFloat(a[0]) <= price * 1.05).reduce((s, a) => s + (parseFloat(a[0]) * parseFloat(a[1])), 0);
     return { symbol, price, bidUSD, askUSD, imbalance: askUSD > 0 ? bidUSD / askUSD : 0 };
 }
 
+// Цикл на setTimeout: следующий круг стартует только после завершения предыдущего,
+// поэтому итерации не накладываются, даже если биржа отвечает медленно.
 async function backgroundLogger() {
-    if (mongoose.connection.readyState !== 1) return;
+    const started = Date.now();
     try {
-        for (const symbol of PINNED_PAIRS) {
-            const d = await fetchAndSave(symbol);
-            await History.create(d);
+        if (mongoose.connection.readyState === 1 && PINNED_PAIRS.length) {
+            const results = await Promise.allSettled(PINNED_PAIRS.map(fetchSnapshot));
+            const timestamp = new Date();   // одна метка времени на все пары круга
+            const docs = [];
+            results.forEach((r, i) => {
+                if (r.status === 'fulfilled') docs.push({ ...r.value, timestamp });
+                else console.error(`backgroundLogger ${PINNED_PAIRS[i]}:`, r.reason?.message || r.reason);
+            });
+            if (docs.length) await History.insertMany(docs, { ordered: false });
         }
-    } catch (e) { console.error('backgroundLogger error:', e.message); }
+    } catch (e) {
+        console.error('backgroundLogger error:', e.message);
+    } finally {
+        setTimeout(backgroundLogger, Math.max(0, LOG_INTERVAL_MS - (Date.now() - started)));
+    }
 }
-setInterval(backgroundLogger, 15000);
+if (process.env.MONGODB_URI) setTimeout(backgroundLogger, LOG_INTERVAL_MS);
 
 // ── Static files ─────────────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'public')));
@@ -78,7 +120,7 @@ app.get('/api/klines', async (req, res) => {
     } catch (e) { res.status(500).json([]); }
 });
 
-// ── API: Live data — также сохраняем в историю ───────────────────────────
+// ── API: Live data ───────────────────────────────────────────────────────
 app.get('/api/data', async (req, res) => {
     try {
         const symbol   = (req.query.symbol || 'BTCUSDT').toUpperCase();
@@ -99,17 +141,8 @@ app.get('/api/data', async (req, res) => {
             .filter(a => parseFloat(a[0]) <= price * (1 + depthPct / 100))
             .reduce((s, a) => s + (parseFloat(a[0]) * parseFloat(a[1])), 0);
 
-        const payload = { price, bidUSD, askUSD, book, symbol };
-
-        // Асинхронно пишем в MongoDB (не блокируем ответ)
-        if (mongoose.connection.readyState === 1) {
-            History.create({
-                symbol, price, bidUSD, askUSD,
-                imbalance: askUSD > 0 ? bidUSD / askUSD : 0
-            }).catch(() => {});
-        }
-
-        res.json(payload);
+        // В базу отсюда не пишем: историю копит только backgroundLogger.
+        res.json({ price, bidUSD, askUSD, book, symbol });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -168,7 +201,10 @@ app.get('/api/history', async (req, res) => {
             .limit(limit)
             .lean();
         res.json(data);
-    } catch (e) { res.json([]); }
+    } catch (e) {
+        console.error('history error:', e.message);
+        res.json([]);
+    }
 });
 
 // ── API: Scan ────────────────────────────────────────────────────────────
