@@ -1,14 +1,17 @@
 {
-  "name": "mexc-indicator",
-  "version": "1.0.0",
+  "name": "mexc-microservices",
+  "version": "2.0.0",
   "type": "module",
-  "description": "",
-  "main": "index.js",
+  "description": "MEXC Pro Terminal — микросервисная структура",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node scripts/start-all.js",
+    "start:gateway": "node services/gateway/main.js",
+    "start:market": "node services/market-data/main.js",
+    "start:indicator": "node services/indicator/main.js",
+    "start:scanner": "node services/scanner/main.js",
+    "start:analytics": "node services/analytics/main.js",
+    "test": "node --test \"tests/*.test.js\""
   },
-  "keywords": [],
-  "author": "",
   "license": "ISC",
   "dependencies": {
     "dotenv": "^17.4.2",
