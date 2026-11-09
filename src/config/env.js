@@ -10,7 +10,7 @@ const num = (value, fallback) => (value === undefined || value === '' || !Number
 export const env = {
   port: num(process.env.PORT, 10000),
   mongoUri: process.env.MONGODB_URI || '',
-  adminApiKey: process.env.ADMIN_API_KEY || '',                          // ключ для ручной записи POST /api/history; пусто — запись отключена
+  adminApiKey: process.env.ADMIN_API_KEY || '',                          // необязательный ключ для POST /api/history; пусто — запись без ключа
   mexcBaseUrl: process.env.MEXC_BASE_URL || 'https://api.mexc.com',
   requestTimeoutMs: num(process.env.MEXC_TIMEOUT_MS, 10000),
   // --- история индикатора ---

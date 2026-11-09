@@ -45,7 +45,7 @@ BTC/ETH/SOL и все просмотренные пары в фоне раз в 
 | `templates.static.test.js` | EJS: id из скриптов есть в разметке, include навигации, все `/api/*` из страниц описаны в Swagger |
 | `swagger.spec.test.js` | OpenAPI ↔ реальные маршруты, все `$ref`, границы параметров совпадают с валидацией |
 | `api.http.test.js` | все REST-эндпоинты (включая `/api/indicators`) на настоящем Express, обработка ошибок, 404 |
-| `history.post.test.js` | ручная запись `POST /api/history`: защита ключом (403/401), валидация тела (19 неверных случаев), запись в память и БД, порядок точек «задним числом», сбой БД → 502 без утечки деталей |
+| `history.post.test.js` | ручная запись `POST /api/history`: необязательная защита ключом (401 только если задан `ADMIN_API_KEY`), валидация тела (19 неверных случаев), запись в память и БД, порядок точек «задним числом», сбой БД → 502 без утечки деталей |
 | `smoke.script.test.js` | сама пост-деплойная проверка `scripts/smoke.js`: проходит на здоровом сервере, падает при сбое биржи/недоступном сервере, коды выхода CLI |
 | `pages.http.test.js` | рендер `/`, `/scanner` (+алиасы), подсветка навигации, статика, `/openapi.json`, Swagger UI |
 
@@ -60,17 +60,17 @@ BTC/ETH/SOL и все просмотренные пары в фоне раз в 
 6. **CI.** Файл `.github/workflows/test.yml`: при каждом push GitHub сам ставит зависимости, гоняет тесты на Node 20 и 22, поднимает сервер и запускает smoke-проверку. Результат — зелёная галочка в репозитории и JUnit-отчёт во вложениях.
 
 ## 4. Ручная запись в БД (POST /api/history)
-Эндпоинт защищён ключом: на сервере нужна переменная окружения `ADMIN_API_KEY` (на Render: Environment → Add; без неё запись отключена и отвечает 403). Запрос:
+Ключ не нужен: по умолчанию запись открыта. (Если хотите закрыть эндпоинт, задайте на сервере переменную окружения `ADMIN_API_KEY` и передавайте её в заголовке `X-API-Key`.) Запрос:
 ```bash
 curl -X POST https://ВАШ-СЕРВИС.onrender.com/api/history \
-  -H "Content-Type: application/json" -H "X-API-Key: ВАШ_КЛЮЧ" \
+  -H "Content-Type: application/json" \
   -d '{"symbol":"BTCUSDT","price":100000,"bidUSD":1500000,"askUSD":1200000}'
 ```
 PowerShell:
 ```powershell
-Invoke-RestMethod -Method Post -Uri https://ВАШ-СЕРВИС.onrender.com/api/history -Headers @{"X-API-Key"="ВАШ_КЛЮЧ"} -ContentType "application/json" -Body '{"symbol":"BTCUSDT","price":100000,"bidUSD":1500000,"askUSD":1200000}'
+Invoke-RestMethod -Method Post -Uri https://ВАШ-СЕРВИС.onrender.com/api/history -ContentType "application/json" -Body '{"symbol":"BTCUSDT","price":100000,"bidUSD":1500000,"askUSD":1200000}'
 ```
-Ответ `201`: `{"stored":"mongodb","point":{...}}`. Необязательно: `timestamp` (ISO 8601, не из будущего и не старше `HISTORY_TTL_SECONDS`), `imbalance` (по умолчанию `bidUSD / askUSD`). В Swagger (`/api-docs`) нажмите **Authorize**, вставьте ключ и используйте «Try it out».
+Ответ `201`: `{"stored":"mongodb","point":{...}}`. Необязательно: `timestamp` (ISO 8601, не из будущего и не старше `HISTORY_TTL_SECONDS`), `imbalance` (по умолчанию `bidUSD / askUSD`). В Swagger (`/api-docs`) используйте «Try it out» (кнопка Authorize нужна, только если на сервере задан ключ).
 
 ## 5. Тесты на сервере (деплой)
 Тесты бывают трёх видов, и каждый запускается в своём месте:

@@ -1,4 +1,4 @@
-// Ручная запись POST /api/history: защита ключом, валидация, запись в память/БД, порядок точек, сбой БД.
+// Ручная запись POST /api/history: необязательная защита ключом, валидация, запись в память/БД, порядок точек, сбой БД.
 // Настоящий Express; MongoDB подменена фейковым хранилищем, ключ задаётся через env.adminApiKey.
 import test, { before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,19 +21,20 @@ const history = async (q = 'symbol=BTCUSDT') => (await fetch(`${srv.base}/api/hi
 const valid = { symbol: 'btcusdt', price: 100, bidUSD: 300, askUSD: 150 };
 
 // ---------- защита ----------
-test('ключ не задан на сервере → 403, ничего не пишется', async () => {
+test('ключ не задан на сервере → запись открыта, ключ не нужен (201)', async () => {
   env.adminApiKey = '';
-  const r = await post(valid); assert.equal(r.status, 403); assert.match((await r.json()).error, /ADMIN_API_KEY/);
-  assert.deepEqual(await history(), []);
+  const r = await post(valid, {}); assert.equal(r.status, 201);
+  assert.equal((await history()).length, 1);
+  assert.equal((await post({ nonsense: true }, {})).status, 400, 'валидация работает и без ключа');
 });
-test('нет ключа или неверный ключ → 401, ничего не пишется, ключ не утекает в ответ', async () => {
+test('ключ задан на сервере: нет ключа или неверный ключ → 401, ничего не пишется, ключ не утекает в ответ', async () => {
   for (const headers of [{}, { 'x-api-key': 'wrong' }, { 'x-api-key': KEY + 'x' }, { 'x-api-key': '' }]) {
     const r = await post(valid, headers); const text = await r.text();
     assert.equal(r.status, 401, JSON.stringify(headers)); assert.ok(!text.includes(KEY));
   }
   assert.deepEqual(await history(), []);
 });
-test('защита срабатывает раньше валидации: без ключа плохое тело не раскрывает детали', async () => {
+test('ключ задан: защита срабатывает раньше валидации, без ключа плохое тело не раскрывает детали', async () => {
   assert.equal((await post({ nonsense: true }, {})).status, 401);
 });
 

@@ -29,7 +29,7 @@ npm start
 - `GET /api/klines?symbol=BTCUSDT&interval=1m&limit=200` (`limit` 1–500; часовой интервал: `60m` или `1h`)
 - `GET /api/indicators/catalog` — список индикаторов
 - `GET /api/indicators?symbol=BTCUSDT&interval=1d&names=ema20,rsi14,rinar&limit=200` — расчёт по свечам MEXC
-- `POST /api/history` — ручная запись точки (тело JSON: `symbol`, `price`, `bidUSD`, `askUSD`, опционально `imbalance`, `timestamp`); нужен заголовок `X-API-Key` = `ADMIN_API_KEY`, без переменной запись отключена (403)
+- `POST /api/history` — ручная запись точки (тело JSON: `symbol`, `price`, `bidUSD`, `askUSD`, опционально `imbalance`, `timestamp`); по умолчанию ключ не нужен; если задать переменную `ADMIN_API_KEY`, потребуется заголовок `X-API-Key` с тем же значением (без него 401)
 - `GET /api/data?symbol=BTCUSDT&depth=5`
 - `GET /api/history?symbol=BTCUSDT&limit=2000&bucket=0` (самые новые точки; заголовок `X-History-Source`)
 - `GET /api/scan?depth=2&limit=100`

@@ -63,15 +63,14 @@ export const openapiSpec = {
           content: json({ type: 'array', items: { $ref: '#/components/schemas/HistoryPoint' } }) },
         '400': errorRef('BadRequest'),
       } },
-      post: { tags: ['History'], summary: 'Ручное добавление точки истории', security: [{ ApiKeyAuth: [] }],
-        description: 'Записывает одну точку BID/ASK вручную (в MongoDB, если подключена, иначе в память). Требует заголовок `X-API-Key`, равный переменной окружения `ADMIN_API_KEY`; если она не задана на сервере — запись отключена (403). Троттлинг не применяется. `timestamp` — ISO 8601, по умолчанию «сейчас»; не из будущего и не старше срока хранения. `imbalance` по умолчанию `bidUSD / askUSD`.',
+      post: { tags: ['History'], summary: 'Ручное добавление точки истории', security: [{}, { ApiKeyAuth: [] }],
+        description: 'Записывает одну точку BID/ASK вручную (в MongoDB, если подключена, иначе в память). Ключ не нужен, если на сервере не задана переменная окружения `ADMIN_API_KEY`; если она задана, нужен заголовок `X-API-Key` с тем же значением (иначе 401). Троттлинг не применяется. `timestamp` — ISO 8601, по умолчанию «сейчас»; не из будущего и не старше срока хранения. `imbalance` по умолчанию `bidUSD / askUSD`.',
         requestBody: { required: true, content: json({ $ref: '#/components/schemas/HistoryInput' }) },
         responses: {
           '201': { description: 'Точка записана', headers: { 'X-History-Source': { description: 'Куда записано', schema: { type: 'string', enum: ['mongodb', 'memory'] } } },
             content: json({ type: 'object', properties: { stored: { type: 'string', enum: ['mongodb', 'memory'] }, point: { $ref: '#/components/schemas/HistoryPoint' } } }) },
           '400': errorRef('BadRequest'),
-          '401': { description: 'Нет или неверный ключ X-API-Key', content: json({ type: 'object', properties: { error: { type: 'string' } } }) },
-          '403': { description: 'Ручная запись отключена: на сервере не задан ADMIN_API_KEY', content: json({ type: 'object', properties: { error: { type: 'string' } } }) },
+          '401': { description: 'На сервере задан ADMIN_API_KEY, а ключ X-API-Key не передан или неверный', content: json({ type: 'object', properties: { error: { type: 'string' } } }) },
           '502': errorRef('UpstreamError'),
         } },
     },
@@ -83,7 +82,7 @@ export const openapiSpec = {
     },
   },
   components: {
-    securitySchemes: { ApiKeyAuth: { type: 'apiKey', in: 'header', name: 'X-API-Key', description: 'Значение переменной окружения ADMIN_API_KEY' } },
+    securitySchemes: { ApiKeyAuth: { type: 'apiKey', in: 'header', name: 'X-API-Key', description: 'Нужен только если на сервере задан ADMIN_API_KEY' } },
     schemas: {
       Health: {
         type: 'object', required: ['status', 'database', 'timestamp'],

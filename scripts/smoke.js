@@ -66,10 +66,10 @@ export function buildChecks(base, { live = false, timeoutMs = 20000 } = {}) {
       for (const q of ['/api/data?depth=99', '/api/data?symbol=%24%24', '/api/klines?interval=7m', '/api/history?limit=0',
         '/api/scan?limit=201', '/api/indicators?names=nope', '/api/indicators?names=rinar&interval=1m']) await expect400(q);
     }],
-    ['безопасность: POST /api/history без ключа отклоняется (401/403), данные не пишутся', async () => {
+    ['валидация: POST /api/history с мусорным телом отклоняется (400, или 401 если задан ключ), данные не пишутся', async () => {
       const r = await fetch(base + '/api/history', { method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ symbol: 'BTCUSDT', price: 1 }), signal: AbortSignal.timeout(timeoutMs) });
-      assert([401, 403].includes(r.status), `POST без ключа вернул HTTP ${r.status} — запись не защищена!`);
+        body: JSON.stringify({ nonsense: true }), signal: AbortSignal.timeout(timeoutMs) });
+      assert([400, 401].includes(r.status), `POST с мусорным телом вернул HTTP ${r.status}`);
     }],
     ['неизвестный маршрут → 404 JSON', async () => {
       const r = await get('/api/nope'); assert(r.status === 404, `HTTP ${r.status}`);
