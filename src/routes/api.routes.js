@@ -1,0 +1,12 @@
+import { Router } from 'express';
+import * as controller from '../controllers/market.controller.js';
+const router = Router();
+router.get('/symbols', controller.symbols);
+router.get('/klines', controller.klines);
+router.get('/indicators/catalog', controller.indicatorCatalog);
+router.get('/indicators', controller.indicators);
+router.get('/data', controller.marketData);
+router.get('/history', controller.history);
+router.get('/scan', controller.scan);
+router.get('/health', controller.health);
+export default router;

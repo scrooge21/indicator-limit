@@ -1,0 +1,24 @@
+import express from 'express';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import swaggerUi from 'swagger-ui-express';
+import { openapiSpec } from '../docs/swagger.js';
+import apiRoutes from './routes/api.routes.js';
+import { errorHandler, notFound } from './middleware/error-handler.js';
+import { rootDir } from './config/env.js';
+
+const app = express();
+const viewsDir = path.join(rootDir, 'views');
+app.set('view engine', 'ejs');
+app.set('views', viewsDir);
+app.use(express.json({ limit: '100kb' }));
+app.use(express.urlencoded({ extended: false }));
+app.use(express.static(path.join(rootDir, 'public')));
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openapiSpec, { explorer: true, customSiteTitle: 'MEXC Indicator API' }));
+app.get('/openapi.json', (req, res) => res.json(openapiSpec));
+app.use('/api', apiRoutes);
+app.get('/', (req, res) => res.render('pages/terminal', { activePage: 'terminal' }));
+app.get(['/scanner', '/scanner.html', '/table.html'], (req, res) => res.render('pages/scanner', { activePage: 'scanner' }));
+app.use(notFound);
+app.use(errorHandler);
+export default app;
