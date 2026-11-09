@@ -63,6 +63,17 @@ export const openapiSpec = {
           content: json({ type: 'array', items: { $ref: '#/components/schemas/HistoryPoint' } }) },
         '400': errorRef('BadRequest'),
       } },
+      post: { tags: ['History'], summary: 'Ручное добавление точки истории', security: [{ ApiKeyAuth: [] }],
+        description: 'Записывает одну точку BID/ASK вручную (в MongoDB, если подключена, иначе в память). Требует заголовок `X-API-Key`, равный переменной окружения `ADMIN_API_KEY`; если она не задана на сервере — запись отключена (403). Троттлинг не применяется. `timestamp` — ISO 8601, по умолчанию «сейчас»; не из будущего и не старше срока хранения. `imbalance` по умолчанию `bidUSD / askUSD`.',
+        requestBody: { required: true, content: json({ $ref: '#/components/schemas/HistoryInput' }) },
+        responses: {
+          '201': { description: 'Точка записана', headers: { 'X-History-Source': { description: 'Куда записано', schema: { type: 'string', enum: ['mongodb', 'memory'] } } },
+            content: json({ type: 'object', properties: { stored: { type: 'string', enum: ['mongodb', 'memory'] }, point: { $ref: '#/components/schemas/HistoryPoint' } } }) },
+          '400': errorRef('BadRequest'),
+          '401': { description: 'Нет или неверный ключ X-API-Key', content: json({ type: 'object', properties: { error: { type: 'string' } } }) },
+          '403': { description: 'Ручная запись отключена: на сервере не задан ADMIN_API_KEY', content: json({ type: 'object', properties: { error: { type: 'string' } } }) },
+          '502': errorRef('UpstreamError'),
+        } },
     },
     '/api/scan': {
       get: { tags: ['Scanner'], summary: 'Сканирование наиболее ликвидных USDT-пар', parameters: [
@@ -72,6 +83,7 @@ export const openapiSpec = {
     },
   },
   components: {
+    securitySchemes: { ApiKeyAuth: { type: 'apiKey', in: 'header', name: 'X-API-Key', description: 'Значение переменной окружения ADMIN_API_KEY' } },
     schemas: {
       Health: {
         type: 'object', required: ['status', 'database', 'timestamp'],
@@ -82,6 +94,15 @@ export const openapiSpec = {
             memorySamples: { type: 'integer' }, tracked: { type: 'array', items: { type: 'string' } },
           } },
           timestamp: { type: 'string', format: 'date-time' },
+        },
+      },
+      HistoryInput: {
+        type: 'object', required: ['symbol', 'price'],
+        properties: {
+          symbol: { type: 'string', example: 'BTCUSDT', pattern: '^[A-Z0-9]{5,25}$' }, price: { type: 'number', exclusiveMinimum: true, minimum: 0, example: 100000 },
+          bidUSD: { type: 'number', minimum: 0, default: 0, example: 1500000 }, askUSD: { type: 'number', minimum: 0, default: 0, example: 1200000 },
+          imbalance: { type: 'number', minimum: 0, description: 'По умолчанию bidUSD / askUSD' },
+          timestamp: { type: 'string', format: 'date-time', description: 'По умолчанию — текущее время' },
         },
       },
       HistoryPoint: {

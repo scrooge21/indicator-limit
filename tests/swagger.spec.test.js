@@ -19,10 +19,10 @@ test('каждый маршрут роутера описан в Swagger и на
   for (const r of routes) assert.ok(spec.paths[r.path]?.[r.method], `нет ${r.method.toUpperCase()} ${r.path} в спецификации`);
   for (const [p, ops] of Object.entries(spec.paths)) for (const m of Object.keys(ops)) assert.ok(routes.some(r => r.path === p && r.method === m), `лишний ${m} ${p}`);
 });
-test('у каждой операции есть тег, summary и ответ 200', () => {
+test('у каждой операции есть тег, summary и успешный ответ (2xx)', () => {
   const tags = new Set(spec.tags.map(t => t.name));
   for (const [p, ops] of Object.entries(spec.paths)) for (const op of Object.values(ops)) {
-    assert.ok(op.summary, p); assert.ok(op.responses['200'], p); assert.ok(op.tags.every(t => tags.has(t)), p);
+    assert.ok(op.summary, p); assert.ok(Object.keys(op.responses).some(c => /^2\d\d$/.test(c)), p); assert.ok(op.tags.every(t => tags.has(t)), p);
   }
 });
 test('все $ref разрешаются', () => {

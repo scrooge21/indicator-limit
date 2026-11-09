@@ -27,6 +27,9 @@ const BUGS = [
   { title: 'Валидация: depth принимает до 2000 % вместо 20 % (абсурдный запрос проходит проверку)',
     file: 'src/controllers/market.controller.js', tests: ['tests/api.http.test.js', 'tests/indicators.controller.test.js', 'tests/swagger.spec.test.js'],
     from: "name: 'depth', fallback: 5, min: 0.1, max: 20", to: "name: 'depth', fallback: 5, min: 0.1, max: 2000" },
+  { title: 'Безопасность: ручная запись в БД доступна без ключа (проверка ключа отключена)',
+    file: 'src/middleware/require-api-key.js', tests: ['tests/history.post.test.js'],
+    from: "if (!given || !crypto.timingSafeEqual(digest(given), digest(env.adminApiKey))) return", to: "if (false) return" },
 ];
 
 const c = process.stdout.isTTY ? { g: '\x1b[32m', r: '\x1b[31m', y: '\x1b[33m', d: '\x1b[2m', b: '\x1b[1m', x: '\x1b[0m' } : { g: '', r: '', y: '', d: '', b: '', x: '' };

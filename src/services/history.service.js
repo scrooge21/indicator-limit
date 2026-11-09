@@ -25,6 +25,21 @@ export async function recordSample(sample, now = Date.now()) {
   return true;
 }
 
+/**
+ * Ручное добавление точки (POST /api/history). Троттлинг не применяется.
+ * Если MongoDB подключена — ждём подтверждения записи в БД (ошибка → 502), иначе точка остаётся только в памяти.
+ */
+export async function addManualSample(sample) {
+  const doc = { ...sample };
+  const toDb = persistentReady();
+  if (toDb) {
+    try { await persistent.store.add(doc); }
+    catch (cause) { console.error('Manual history write failed:', cause.message); const e = new Error('Failed to write to the database'); e.status = 502; throw e; }
+  }
+  await memory.add(doc);
+  return { stored: toDb ? persistent.store.name : memory.name, point: doc };
+}
+
 export async function getHistory(params) {
   if (persistentReady()) {
     try {

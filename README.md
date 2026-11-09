@@ -29,6 +29,7 @@ npm start
 - `GET /api/klines?symbol=BTCUSDT&interval=1m&limit=200` (`limit` 1–500; часовой интервал: `60m` или `1h`)
 - `GET /api/indicators/catalog` — список индикаторов
 - `GET /api/indicators?symbol=BTCUSDT&interval=1d&names=ema20,rsi14,rinar&limit=200` — расчёт по свечам MEXC
+- `POST /api/history` — ручная запись точки (тело JSON: `symbol`, `price`, `bidUSD`, `askUSD`, опционально `imbalance`, `timestamp`); нужен заголовок `X-API-Key` = `ADMIN_API_KEY`, без переменной запись отключена (403)
 - `GET /api/data?symbol=BTCUSDT&depth=5`
 - `GET /api/history?symbol=BTCUSDT&limit=2000&bucket=0` (самые новые точки; заголовок `X-History-Source`)
 - `GET /api/scan?depth=2&limit=100`
@@ -37,7 +38,7 @@ npm start
 
 ## Тесты и демонстрация
 ```bash
-npm test                  # все автотесты (122, ~3 с; без MongoDB и интернета)
+npm test                  # все автотесты (137, ~3 с; без MongoDB и интернета)
 npm run test:spec         # то же, построчный отчёт
 npm run test:coverage     # то же с покрытием
 npm run test:ci           # для CI: отчёт в консоль + reports/junit.xml
@@ -63,5 +64,5 @@ CI настроен в `.github/workflows/test.yml`. Сценарий показ
 Не перенесены индикаторы Average RSI (корзины альтов) и ончейн-индикаторы (CVDD, MVRV, SOPR): им нужны данные не из API MEXC.
 
 ## Хранение истории (настройки в `.env`)
-`HISTORY_MIN_INTERVAL_MS`, `HISTORY_MAX_DOCS`, `HISTORY_TTL_SECONDS`, `HISTORY_MEMORY_PER_SYMBOL`, `LOG_INTERVAL_MS`,
+`ADMIN_API_KEY`, `HISTORY_MIN_INTERVAL_MS`, `HISTORY_MAX_DOCS`, `HISTORY_TTL_SECONDS`, `HISTORY_MEMORY_PER_SYMBOL`, `LOG_INTERVAL_MS`,
 `WATCH_MAX_SYMBOLS`, `WATCH_TTL_MS` — см. `.env.example`.

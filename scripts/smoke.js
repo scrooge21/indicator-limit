@@ -8,7 +8,8 @@
 // Без --live проверяется только сам сервис (страницы, Swagger, валидация, health): биржа не нужна.
 // С --live добавляются проверки через настоящий MEXC: пары, стакан, свечи (в т.ч. 1h → 60m), индикаторы, история, сканер.
 // Код выхода: 0 — всё прошло, 1 — есть упавшие проверки, 2 — сервер недоступен.
-import { pathToFileURL } from 'node:url';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const EXPECTED_PATHS = ['/api/health', '/api/symbols', '/api/klines', '/api/indicators/catalog', '/api/indicators', '/api/data', '/api/history', '/api/scan'];
 
@@ -64,6 +65,11 @@ export function buildChecks(base, { live = false, timeoutMs = 20000 } = {}) {
     ['валидация: плохие параметры → 400 (без обращения к бирже)', async () => {
       for (const q of ['/api/data?depth=99', '/api/data?symbol=%24%24', '/api/klines?interval=7m', '/api/history?limit=0',
         '/api/scan?limit=201', '/api/indicators?names=nope', '/api/indicators?names=rinar&interval=1m']) await expect400(q);
+    }],
+    ['безопасность: POST /api/history без ключа отклоняется (401/403), данные не пишутся', async () => {
+      const r = await fetch(base + '/api/history', { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ symbol: 'BTCUSDT', price: 1 }), signal: AbortSignal.timeout(timeoutMs) });
+      assert([401, 403].includes(r.status), `POST без ключа вернул HTTP ${r.status} — запись не защищена!`);
     }],
     ['неизвестный маршрут → 404 JSON', async () => {
       const r = await get('/api/nope'); assert(r.status === 404, `HTTP ${r.status}`);
@@ -137,4 +143,6 @@ async function main() {
   process.exit(unreachable ? 2 : failed ? 1 : 0);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+// Запуск как CLI. Сравниваем реальные пути (а не URL-строки): на Windows регистр буквы диска и разделители могут отличаться.
+const isMain = () => { try { return fs.realpathSync(fileURLToPath(import.meta.url)) === fs.realpathSync(process.argv[1]); } catch { return false; } };
+if (isMain()) main();

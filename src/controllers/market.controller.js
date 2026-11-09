@@ -1,8 +1,9 @@
+import { env } from '../config/env.js';
 import { getSymbols, getMarketData, scanMarket } from '../services/market.service.js';
-import { getHistory, historyStats } from '../services/history.service.js';
+import { getHistory, historyStats, addManualSample } from '../services/history.service.js';
 import { mexcService } from '../services/mexc.service.js';
 import { getIndicators, CATALOG, DEFAULT_OUTPUT, WARMUP_CANDLES } from '../services/indicator.service.js';
-import { parseInterval, parseNames, parseNumber, parseSymbol } from '../utils/validation.js';
+import { parseInterval, parseNames, parseNumber, parseSymbol, parseHistorySample } from '../utils/validation.js';
 
 export async function symbols(req, res) { res.json(await getSymbols()); }
 export async function klines(req, res) {
@@ -24,6 +25,11 @@ export async function history(req, res) {
   if (req.query.since !== undefined) { const seconds = parseNumber(req.query.since, { name: 'since', fallback: 0, min: 0, max: 4102444800 }); since = new Date(seconds * 1000); }
   const { source, rows } = await getHistory({ symbol, since, bucket, limit });
   res.set('X-History-Source', source).json(rows);
+}
+export async function addHistory(req, res) {
+  const sample = parseHistorySample(req.body, { maxAgeMs: env.historyTtlSeconds * 1000 });
+  const { stored, point } = await addManualSample(sample);
+  res.status(201).set('X-History-Source', stored).json({ stored, point });
 }
 export async function scan(req, res) {
   const depth = parseNumber(req.query.depth, { name: 'depth', fallback: 2, min: 0.1, max: 20 });

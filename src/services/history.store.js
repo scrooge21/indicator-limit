@@ -22,7 +22,9 @@ export class MemoryHistoryStore {
 
   async add(sample) {
     const list = this.data.get(sample.symbol) || [];
-    list.push(sample);
+    let i = list.length;
+    while (i > 0 && list[i - 1].timestamp > sample.timestamp) i--; // обычно 0 шагов; ручная запись «задним числом» встаёт по времени
+    list.splice(i, 0, sample);
     if (list.length > this.maxPerSymbol) list.splice(0, list.length - this.maxPerSymbol);
     this.data.set(sample.symbol, list);
   }
