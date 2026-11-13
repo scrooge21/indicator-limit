@@ -1,0 +1,42 @@
+# Запуск: cp .env.example .env && docker compose up -d --build
+# Приложение: http://localhost:10000   Swagger: http://localhost:10000/api-docs
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  app:
+    build:
+      context: .
+      target: runtime
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # внутри сети compose база доступна по имени сервиса, а не по 127.0.0.1
+      MONGODB_URI: mongodb://mongo:27017/mexc-indicator
+      PORT: "10000"
+    ports:
+      - "${PORT:-10000}:10000"
+
+  # Автотесты в контейнере: docker compose --profile test run --rm tests
+  tests:
+    profiles: ["test"]
+    build:
+      context: .
+      target: test
+    command: ["npm", "test"]
+
+volumes:
+  mongo-data:

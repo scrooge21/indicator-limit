@@ -66,3 +66,15 @@ CI настроен в `.github/workflows/test.yml`. Сценарий показ
 ## Хранение истории (настройки в `.env`)
 `ADMIN_API_KEY`, `HISTORY_MIN_INTERVAL_MS`, `HISTORY_MAX_DOCS`, `HISTORY_TTL_SECONDS`, `HISTORY_MEMORY_PER_SYMBOL`, `LOG_INTERVAL_MS`,
 `WATCH_MAX_SYMBOLS`, `WATCH_TTL_MS` — см. `.env.example`.
+
+## Docker
+```bash
+cp .env.example .env                 # задайте ADMIN_API_KEY
+docker compose up -d --build         # приложение + MongoDB 7 с постоянным томом
+curl http://localhost:10000/api/health
+docker compose logs -f app
+docker compose down                  # остановить (данные MongoDB сохраняются в томе mongo-data)
+```
+Автотесты в контейнере (без MongoDB и интернета): `docker build --target test .` или `docker compose --profile test run --rm tests`.
+В compose адрес базы задаётся как `mongodb://mongo:27017/mexc-indicator` (имя сервиса), значение `MONGODB_URI` из `.env` для контейнера переопределяется.
+Образ запускается от пользователя `node` и имеет HEALTHCHECK по `/api/health`.
